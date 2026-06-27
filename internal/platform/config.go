@@ -25,3 +25,14 @@ type Config struct {
 
 	RateLimitRPM int
 }
+
+func Load() (*Config, error) {
+	cfg := &Config{
+		AppEnv:          getEnv("APP_ENV", "dev"),
+		AppPort:         getEnv("APP_PORT", "8080"),
+		DBMaxConns:      int32(getEnvInt("DB_MAX_CONNS", 10)),
+		DBConnTimeout:   getEnvInt("DB_CONN_TIMEOUT_SEC", 5),
+		NIMBaseURL:      getEnv("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
+		OTELServiceName: getEnv("OTEL_SERVICE_NAME", "product-intelligence"),
+		RateLimitRPM:    getEnvInt("RATE_LIMIT_RPM", 100),
+	}
