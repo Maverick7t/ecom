@@ -1,80 +1,63 @@
 from pathlib import Path
 
-# Root directory (current directory)
 ROOT = Path(".")
 
 directories = [
+    # =========================
     # Commands
+    # =========================
     "cmd/api",
     "cmd/seed",
 
+    # =========================
     # Internal
+    # =========================
     "internal",
 
     # Application bootstrap
     "internal/app",
 
-    # API
+    # =========================
+    # HTTP Layer
+    # =========================
     "internal/api",
     "internal/api/handlers",
     "internal/api/middleware",
     "internal/api/response",
 
-    # Platform
+    # =========================
+    # Platform (Infrastructure)
+    # =========================
     "internal/platform",
+
     "internal/platform/config",
     "internal/platform/database",
     "internal/platform/logger",
     "internal/platform/telemetry",
     "internal/platform/migrate",
     "internal/platform/auth",
+    "internal/platform/storage",
+    "internal/platform/queue",
+    "internal/platform/nim",
+    "internal/platform/embedding",
 
-    # Domains
+    # =========================
+    # Domain Packages
+    # =========================
     "internal/catalog",
-    "internal/catalog/repository",
-    "internal/catalog/service",
-
     "internal/search",
-    "internal/search/repository",
-    "internal/search/service",
-
     "internal/features",
-    "internal/features/repository",
-    "internal/features/service",
-
-    "internal/embeddings",
-    "internal/embeddings/service",
-
     "internal/ai",
-    "internal/ai/client",
-    "internal/ai/service",
-
     "internal/users",
-    "internal/users/repository",
-    "internal/users/service",
-
     "internal/cart",
-    "internal/cart/repository",
-    "internal/cart/service",
-
     "internal/orders",
-    "internal/orders/repository",
-    "internal/orders/service",
-
     "internal/collections",
-    "internal/collections/repository",
-    "internal/collections/service",
-
     "internal/chat",
-    "internal/chat/repository",
-    "internal/chat/service",
-
     "internal/notifications",
-    "internal/notifications/repository",
-    "internal/notifications/service",
-    "internal/notifications/sse",
 
-    # Jobs
+    # =========================
+    # Background Jobs
+    # =========================
     "internal/jobs",
     "internal/jobs/catalog",
     "internal/jobs/reviews",
@@ -82,44 +65,54 @@ directories = [
     "internal/jobs/embeddings",
     "internal/jobs/summaries",
 
+    # =========================
     # Database
+    # =========================
     "db",
     "db/migrations",
     "db/queries",
 
-    # Assets / seed data
+    # =========================
+    # Assets
+    # =========================
     "assets",
     "assets/prompts",
     "assets/schemas",
 
-    # Config
+    # =========================
+    # Configuration
+    # =========================
     "configs",
 
-    # Scripts
-    "scripts",
-
-    # Docker
+    # =========================
+    # Deployment
+    # =========================
     "deploy",
     "deploy/docker",
 
+    # =========================
+    # Scripts
+    # =========================
+    "scripts",
+
+    # =========================
+    # Documentation
+    # =========================
+    "docs",
+    "docs/api",
+    "docs/architecture",
+
+    # =========================
     # Tests
+    # =========================
     "tests",
     "tests/integration",
     "tests/testdata",
-
-    # Documentation
-    "docs",
-    "docs/architecture",
-    "docs/api",
 ]
 
 for directory in directories:
-    path = ROOT / directory
-    path.mkdir(parents=True, exist_ok=True)
+    (ROOT / directory).mkdir(parents=True, exist_ok=True)
 
-print(f"✅ Created {len(directories)} directories.")
-
-# Optional placeholder files so Git tracks empty directories
 gitkeep_dirs = [
     "db/migrations",
     "db/queries",
@@ -133,4 +126,5 @@ gitkeep_dirs = [
 for directory in gitkeep_dirs:
     (ROOT / directory / ".gitkeep").touch(exist_ok=True)
 
-print("✅ Added .gitkeep files.")
+print(f"✅ Created {len(directories)} directories")
+print("✅ Added .gitkeep files")
