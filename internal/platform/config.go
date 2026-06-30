@@ -49,3 +49,14 @@ func Load() (*Config, error) {
 		"R2_BUCKET":                 &cfg.R2Bucket,
 		"OTEL_ENDPOINT":             &cfg.OTELEndpoint,
 	}
+
+	vat missing []string
+	for key, dest := range required {
+		val  := os.Getenv(key)
+		if val == "" {
+			missing = append(missing, key)
+			continue
+		}
+		*dest = val
+		}
+	
