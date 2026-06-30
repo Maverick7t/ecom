@@ -59,4 +59,12 @@ func Load() (*Config, error) {
 		}
 		*dest = val
 		}
-	
+
+		cfg.R2PublicBaseURL = os.Getenv("R2_PUBLIC_BASE_URL")
+
+	if len(missing) > 0 {
+		return nil, fmt.Errorf("missing required environment variables: %v", missing)
+	}
+
+	return cfg, nil
+}
