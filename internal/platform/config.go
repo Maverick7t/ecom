@@ -68,3 +68,13 @@ func Load() (*Config, error) {
 
 	return cfg, nil
 }
+
+func (c *Config) IsProd() bool { return c.AppEnv == "prod" }
+func (c *Config) IsDev() bool  { return c.AppEnv == "dev" }
+
+func getEnv(key, defaultVal string) string {
+	if val := os.Getenv(key); val != "" {
+		return val
+	}
+	return defaultVal
+}
