@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"context"
 	"log/slog"
 	"os"
 )
@@ -21,4 +22,12 @@ func NewLogger(cfg *Config) *slog.Logger {
 	}
 
 	return slog.New(slog.NewJSONHandler(os.Stdout, opts))
+}
+
+func WithTraceID(ctx context.Context, traceID string) context.Context {
+	return context.WithValue(ctx, TraceIDKey, traceID)
+}
+
+func WithUserID(ctx context.Context, userID string) context.Context {
+	return context.WithValue(ctx, UserIDKey, userID)
 }
