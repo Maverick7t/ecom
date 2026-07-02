@@ -31,3 +31,13 @@ func WithTraceID(ctx context.Context, traceID string) context.Context {
 func WithUserID(ctx context.Context, userID string) context.Context {
 	return context.WithValue(ctx, UserIDKey, userID)
 }
+
+func TraceIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(TraceIDKey).(string)
+	return v
+}
+
+func UserIDFromContext(ctx context.Context) string {
+	v, _ := ctx.Value(UserIDKey).(string)
+	return v
+}
