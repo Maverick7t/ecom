@@ -26,4 +26,14 @@ func NewTelemetry(ctx context.Context, cfg *Config, logger *slog.Logger) (*Telem
 			semconv.DeploymentEnviourment(cfg.AppEnv),
 		),
 	)
-		))
+	if err != nil {
+		return nil, fmt.Errorf("create otlp exporter: %w", err)
+	}
+}
+
+tp := sdktrace.NewTracerProvider(
+	sdktrace.WithBatcher(exporter),
+	sdktrace.WithResource(res),
+	sdktrace.WithSampler(sdktrace.AlwaysSample()),
+)
+
