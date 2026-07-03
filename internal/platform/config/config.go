@@ -78,3 +78,15 @@ func getEnv(key, defaultVal string) string {
 	}
 	return defaultVal
 }
+
+func getEnvInt(key string, defaultVal int) int {
+	val := os.Getenv(key)
+	if val == "" {
+		return defaultVal
+	}
+	n, err := strconv.Atoi(val)
+	if err != nil {
+		return defaultVal
+	}
+	return n
+}
