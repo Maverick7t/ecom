@@ -1,5 +1,12 @@
 package api
 
+import (
+	"encoding/json"
+	"net/http"
+
+	platform "github.com/Maverick7t/ecom/internal/platform/logger"
+)
+
 type APIError struct {
 	Code    string `json:"code"`
 	Message string `json:"message"`
@@ -14,3 +21,10 @@ const (
 	ErrorCodeAIUnavailable = "AI_UNAVAILABLE"
 	ErrorCodeRateLimited   = "RATE_LIMITED"
 )
+
+func writeError(w http.ResponseWriter, r *http.Request, status int, code, message string) {
+	traceID := platform.TraceIDFromContext(r.Context())
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(APIError{Code: code, Message: message, TraceID: traceID})
+}
