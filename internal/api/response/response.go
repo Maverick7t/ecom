@@ -28,3 +28,9 @@ func writeError(w http.ResponseWriter, r *http.Request, status int, code, messag
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(APIError{Code: code, Message: message, TraceID: traceID})
 }
+
+func WriteJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(v)
+}
