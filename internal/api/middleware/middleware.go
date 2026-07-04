@@ -134,3 +134,23 @@ func RateLimiter(rpm int) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+func CORS(cfg *platform.Config) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.RespnseWriter, r *http.Request) {
+			origin := "*"
+			if cfg.IsProd() {
+				origin = "https://project vercel.app"
+
+			}
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Alloww-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Request-ID")
+			if r.Method == http.MethodOptions {
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
