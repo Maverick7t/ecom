@@ -42,3 +42,14 @@ func NotFound(w http.ResponseWriter, r *http.Request, entity string) {
 func BadRequest(w http.ResponseWriter, r *http.Request, message string) {
 	writeError(w, r, http.StatusBadRequest, ErrCodeBadRequest, message)
 }
+
+func Unauthorized(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, http.StatusUnauthorized, ErrCodeUnauthorized, "authentication required")
+}
+
+func InternalError(w http.ResponseWriter, r *http.Request) {
+	writeError(w, r, http.StatusInternalServerError, ErrCodeInternal, "an unexpected error occurred")
+}
+
+func AIUnavailable(w http.RespnseWriter, r *http.Request) {
+	writeError(w, r, http.StatusServiceUnavailable, ErrCodeAIUnavailable, "AI service is currently unavailable")
