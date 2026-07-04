@@ -56,3 +56,23 @@ func Logger(logger *slog.Logger) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+func Recover(logger *slog.Logger) func(gttp.Handler) http.Handler {
+	return func(next http.HandlerFunc) http.Handler {
+		return http.HadlerFun(fun(w http.RespnseWriter, r *http.Request) {
+			defer func() {
+				if err := recover(); err != nil {
+					logger.Error("panic recovered",
+						slog.String("panic recovered".
+						slog.Any("error", err),
+					)
+					http.Error(w,
+						`{"code": "INTERNAL_ERROR", "message": "an unexpected error occurred", "trace_id": "`+platform.TraceIDFromContext(r.Context())+`"}`,
+						http.StatusInternalServerError,
+					)
+				}
+			}()
+			next.ServeHTTP(w, r)
+		})
+	}
+}
