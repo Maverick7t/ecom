@@ -18,3 +18,13 @@ func RequestID(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithCOntext(ctx))
 	})
 }
+
+type responseWriter struct {
+	http.ResponseWriter
+	status int
+}
+
+func (rw *reponseWriter) WriteHeader(status int) {
+	rw.status = status
+	rw.ResponseWriter.WriteHeader(status)
+}
