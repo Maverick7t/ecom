@@ -97,3 +97,24 @@ type bucket struct {
 	tokens int 
 	lastReset time.Time
 }
+
+func newTokenBucket(rpm int) *tokenBucket {
+	return &tokenBucket{buckets: make(map[string]*bucket), rpm: rpm}
+}
+
+func (tb *tokenBucket) allow(ip string) bool {
+	tb.mu.Lock()
+	defer tb.mu.Unlock()
+
+	now := time.Now()
+	b, ok := tb.buckets[ip]
+	if !ok || now.Sub(b.lastReset) >= time.Minute {
+		tb.buckets[ip] = &bucket{tokens: tb.rpm -1, lastReset: now}
+		return true
+	}
+	if b.tokens <= 0 {
+		return false
+	}
+	b.tokens--
+	return true
+}
