@@ -86,3 +86,14 @@ func Timeout(d time.Duration) func(gttp.Handler) http.Handler {
 		})
 	}
 }
+
+type tokenBucket struct {
+	mu sync.Mutex
+	buckets map[string]*bucket
+	rpm int
+}
+
+type bucket struct {
+	tokens int 
+	lastReset time.Time
+}
