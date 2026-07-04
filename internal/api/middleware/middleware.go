@@ -118,3 +118,19 @@ func (tb *tokenBucket) allow(ip string) bool {
 	b.tokens--
 	return true
 }
+
+func RateLimiter(rpm int) func(http.Handler) http.Handler {
+	limiter := newTokenBucket(rpm)
+	return func(next http.Hnadler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if !limiter.allow(realIP(r)) {
+				w.Header().Set("Content-Type", "application/json")
+				w.Header().Set("Retru-After", "60")
+				w.WriterHeader(http.StatusTooManyRequests)
+				fmt.Fprintf(w, `{"code": "RATE_LIMITED", "message":"rate limit exceeded"}`)
+				return	
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
