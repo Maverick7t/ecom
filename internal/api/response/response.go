@@ -34,3 +34,11 @@ func WriteJSON(w http.ResponseWriter, status int, v any) {
 	w.WriteHeader(status)
 	json.NewEncoder(w).Encode(v)
 }
+
+func NotFound(w http.ResponseWriter, r *http.Request, entity string) {
+	writeError(w, r, http.StatusNotFound, ErrCodeNotFound, entity+" not found")
+}
+
+func BadRequest(w http.ResponseWriter, r *http.Request, message string) {
+	writeError(w, r, http.StatusBadRequest, ErrCodeBadRequest, message)
+}
