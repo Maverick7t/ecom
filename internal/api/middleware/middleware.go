@@ -166,7 +166,16 @@ func Timeout(d time.Duration) func(http.Handler) http.Handler {
 }
 
 type tokenBucket struct {
-	mu sync.Mutex {
+	mu sync.Mutex
 	buckets map[string]*bucket
 	rpm int
+}
+
+type bucket struct {
+	tokens int
+	lastReset time.Time
+}
+
+func newTokenBucket(rpm int) *tokenBucket {
+	return &tokenBucket{buckets: make(map[string]*bucket), rpm: rpm}
 }
