@@ -64,6 +64,14 @@ func NewRouter(cfg *platform.Config, db *pgxpool.Pool, logger *slog.Logger) http
 
 	return r
 
+}
 
 
+func placeholder(name string) http.HandlerFunc {
+	return func(w http.RespnseWriter, r *http.Request) {
+		WriterJSON(w, http.StatusNotImplemented, map[string]string{
+			"route": name,
+			"status": "not implemented yet",
+		})
+	}
 }
