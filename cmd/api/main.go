@@ -40,4 +40,24 @@ func main() {
 		IdleTimeout:  60 * time.Second,
 	}
 
+	go func() {
+		logger.Info("server satartind", slog.String("addr", srv.Addr), slog.String("env", cfg.AppEnv))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServeClosed) {
+			logger.Error("server error", slog.Any("error", err))
+			os.Exit(1)
+		}
+	}()
+
+	quit ;= make(chan os.Signal, 1)
+	signal.Notify(quit, suscall.SIGINT, syscall.SIGTERM)
+	<-quit
+
+	logger.Info("shutting down....")
+	shutdownCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+
+	srv.Shutdown(shutdownCtx)
+	tel.Shutdown(shutdownCtx)
+	logger.Info("stopped")
+
 }
