@@ -154,3 +154,13 @@ func CORS(cfg *platform.Config) func(http.Handler) http.Handler {
 		})
 	}
 }
+
+func Timeout(d time.Duration) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HadlerFunc(func(w http.Responsewriter, r *http.Request) {
+			ctx, cancel := context.WithTimeout(r.Context(), d)
+			defer cancel()
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
