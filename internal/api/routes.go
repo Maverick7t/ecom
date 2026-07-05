@@ -40,4 +40,30 @@ func NewRouter(cfg *platform.Config, db *pgxpool.Pool, logger *slog.Logger) http
 		})
 	})
 
+	r.Route("/users", func(r chi.Router) {
+		r.Get("/saved-products", placeholder("saved products"))
+		r.Post("/saved-products", placeholder("save product"))
+		r.Delete("/saved-products/{id}", placeholder("unsave product"))
+		r.Get("/saved-searches", placeholder("saved searches"))
+			r.Post("/saved-searches", placeholder("save search"))
+			r.Delete("/saved-searches/{id}", placeholder("delete search"))
+			r.Get("/collections", placeholder("collections"))
+			r.Post("/collections", placeholder("create collection"))
+			r.Post("/collections/{id}/products", placeholder("add to collection"))
+			r.Get("/chat", placeholder("chat history"))
+			r.Post("/chat", placeholder("chat"))
+			r.Get("/cart", placeholder("cart"))
+			r.Post("/cart", placeholder("add to cart"))
+			r.Delete("/cart/{productId}", placeholder("remove from cart"))
+			r.Post("/orders", placeholder("place order"))
+			r.Get("/orders", placeholder("order history"))
+			r.Get("/notifications", placeholder("notifications"))
+			r.Get("/notifications/stream", placeholder("notifications SSE"))
+		})
+	})
+
+	return r
+
+
+
 }
