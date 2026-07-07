@@ -1,0 +1,20 @@
+version: '3.9'
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: pip-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: product_intelligence
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/posgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U postgres" ]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+volumes:
+  potgres_data:
