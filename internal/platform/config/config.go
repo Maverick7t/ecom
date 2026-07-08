@@ -1,4 +1,10 @@
-package platform
+package config
+
+import (
+	"fmt"
+	"os"
+	"strconv"
+)
 
 type Config struct {
 	AppEnv  string
@@ -50,17 +56,17 @@ func Load() (*Config, error) {
 		"OTEL_ENDPOINT":             &cfg.OTELEndpoint,
 	}
 
-	vat missing []string
+	missing := []string{}
 	for key, dest := range required {
-		val  := os.Getenv(key)
+		val := os.Getenv(key)
 		if val == "" {
 			missing = append(missing, key)
 			continue
 		}
 		*dest = val
-		}
+	}
 
-		cfg.R2PublicBaseURL = os.Getenv("R2_PUBLIC_BASE_URL")
+	cfg.R2PublicBaseURL = os.Getenv("R2_PUBLIC_BASE_URL")
 
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %v", missing)
