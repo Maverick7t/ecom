@@ -5,15 +5,16 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/YOURUSERNAME/ecom/internal/api/handlers"
-	"github.com/YOURUSERNAME/ecom/internal/api/middleware"
-	"github.com/YOURUSERNAME/ecom/internal/platform"
+	"github.com/Maverick7t/ecom/internal/api/handlers"
+	"github.com/Maverick7t/ecom/internal/api/middleware"
+	"github.com/Maverick7t/ecom/internal/api/response"
+	"github.com/Maverick7t/ecom/internal/platform/config"
 	"github.com/go-chi/chi/v5"
 	chimiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewRouter(cfg *platform.Config, db *pgxpool.Pool, logger *slog.Logger) http.Handler {
+func NewRouter(cfg *config.Config, db *pgxpool.Pool, logger *slog.Logger) http.Handler {
 	r := chi.NewRouter()
 
 	r.Use(middleware.CORS(cfg))
@@ -45,32 +46,30 @@ func NewRouter(cfg *platform.Config, db *pgxpool.Pool, logger *slog.Logger) http
 		r.Post("/saved-products", placeholder("save product"))
 		r.Delete("/saved-products/{id}", placeholder("unsave product"))
 		r.Get("/saved-searches", placeholder("saved searches"))
-			r.Post("/saved-searches", placeholder("save search"))
-			r.Delete("/saved-searches/{id}", placeholder("delete search"))
-			r.Get("/collections", placeholder("collections"))
-			r.Post("/collections", placeholder("create collection"))
-			r.Post("/collections/{id}/products", placeholder("add to collection"))
-			r.Get("/chat", placeholder("chat history"))
-			r.Post("/chat", placeholder("chat"))
-			r.Get("/cart", placeholder("cart"))
-			r.Post("/cart", placeholder("add to cart"))
-			r.Delete("/cart/{productId}", placeholder("remove from cart"))
-			r.Post("/orders", placeholder("place order"))
-			r.Get("/orders", placeholder("order history"))
-			r.Get("/notifications", placeholder("notifications"))
-			r.Get("/notifications/stream", placeholder("notifications SSE"))
-		})
+		r.Post("/saved-searches", placeholder("save search"))
+		r.Delete("/saved-searches/{id}", placeholder("delete search"))
+		r.Get("/collections", placeholder("collections"))
+		r.Post("/collections", placeholder("create collection"))
+		r.Post("/collections/{id}/products", placeholder("add to collection"))
+		r.Get("/chat", placeholder("chat history"))
+		r.Post("/chat", placeholder("chat"))
+		r.Get("/cart", placeholder("cart"))
+		r.Post("/cart", placeholder("add to cart"))
+		r.Delete("/cart/{productId}", placeholder("remove from cart"))
+		r.Post("/orders", placeholder("place order"))
+		r.Get("/orders", placeholder("order history"))
+		r.Get("/notifications", placeholder("notifications"))
+		r.Get("/notifications/stream", placeholder("notifications SSE"))
 	})
 
 	return r
 
 }
 
-
 func placeholder(name string) http.HandlerFunc {
-	return func(w http.RespnseWriter, r *http.Request) {
-		WriterJSON(w, http.StatusNotImplemented, map[string]string{
-			"route": name,
+	return func(w http.ResponseWriter, r *http.Request) {
+		response.WriteJSON(w, http.StatusNotImplemented, map[string]string{
+			"route":  name,
 			"status": "not implemented yet",
 		})
 	}
