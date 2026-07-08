@@ -1,9 +1,11 @@
-package platform
+package logger
 
 import (
 	"context"
 	"log/slog"
 	"os"
+
+	"github.com/Maverick7t/ecom/internal/platform/config"
 )
 
 type contextKey string
@@ -13,7 +15,7 @@ const (
 	UserIDKey  contextKey = "user_id"
 )
 
-func NewLogger(cfg *Config) *slog.Logger {
+func NewLogger(cfg *config.Config) *slog.Logger {
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
 
 	if cfg.IsDev() {
@@ -25,7 +27,7 @@ func NewLogger(cfg *Config) *slog.Logger {
 }
 
 func WithTraceID(ctx context.Context, traceID string) context.Context {
-	return context.WithValue(ctx, TraceIDKey, traceID)
+	return context.WithValue(ctx, TraceIdKey, traceID)
 }
 
 func WithUserID(ctx context.Context, userID string) context.Context {
@@ -33,7 +35,7 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 }
 
 func TraceIDFromContext(ctx context.Context) string {
-	v, _ := ctx.Value(TraceIDKey).(string)
+	v, _ := ctx.Value(TraceIdKey).(string)
 	return v
 }
 
