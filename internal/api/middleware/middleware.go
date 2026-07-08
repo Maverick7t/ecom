@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/YOURUSERNAME/product-intelligence/internal/platform"
+	"github.com/Maverick7t/ecom/internal/platform/config"
+	"github.com/Maverick7t/ecom/internal/platform/logger"
 	"github.com/google/uuid"
 )
 
@@ -19,7 +20,7 @@ func RequestID(next http.Handler) http.Handler {
 		if traceID == "" {
 			traceID = uuid.New().String()
 		}
-		ctx := platform.WithTraceID(r.Context(), traceID)
+		ctx := logger.WithTraceID(r.Context(), traceID)
 		w.Header().Set("X-Request-ID", traceID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
@@ -35,7 +36,7 @@ func (rw *responseWriter) WriteHeader(status int) {
 	rw.ResponseWriter.WriteHeader(status)
 }
 
-func Logger(logger *slog.Logger) func(http.Handler) http.Handler {
+func Logger(lg *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -49,8 +50,8 @@ func Logger(logger *slog.Logger) func(http.Handler) http.Handler {
 				level = slog.LevelWarn
 			}
 
-			logger.LogAttrs(r.Context(), level, "request",
-				slog.String("trace_id", platform.TraceIDFromContext(r.Context())),
+			lg.LogAttrs(r.Context(), level, "request",
+				slog.String("trace_id", logger.TraceIDFromContext(r.Context())),
 				slog.String("method", r.Method),
 				slog.String("path", r.URL.Path),
 				slog.Int("status", rw.status),
@@ -61,13 +62,13 @@ func Logger(logger *slog.Logger) func(http.Handler) http.Handler {
 	}
 }
 
-func Recoverer(logger *slog.Logger) func(http.Handler) http.Handler {
+func Recoverer(lg *slog.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				if err := recover(); err != nil {
-					logger.Error("panic recovered",
-						slog.String("trace_id", platform.TraceIDFromContext(r.Context())),
+					lg.Error("panic recovered",
+						slog.String("trace_id", logger.TraceIDFromContext(r.Context())),
 						slog.Any("error", err),
 					)
 					http.Error(w,
@@ -139,7 +140,7 @@ func RateLimiter(rpm int) func(http.Handler) http.Handler {
 	}
 }
 
-func CORS(cfg *platform.Config) func(http.Handler) http.Handler {
+func CORS(cfg *config.Config) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := "*"
