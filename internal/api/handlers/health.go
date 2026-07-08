@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/YOURUSERNAME/product-intelligence/internal/api"
+	"github.com/Maverick7t/ecom/internal/api/response"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -28,7 +28,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 	if err := h.db.Ping(ctx); err != nil {
 		h.logger.Error("health db ping failed", slog.Any("error", err))
 		checks["database"] = "unhealthy"
-		api.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
+		response.WriteJSON(w, http.StatusServiceUnavailable, map[string]any{
 			"status": "unhealthy",
 			"checks": checks,
 			"time":   time.Now().UTC().Format(time.RFC3339),
@@ -37,7 +37,7 @@ func (h *HealthHandler) Health(w http.ResponseWriter, r *http.Request) {
 	}
 
 	checks["database"] = "healthy"
-	api.WriteJSON(w, http.StatusOK, map[string]any{
+	response.WriteJSON(w, http.StatusOK, map[string]any{
 		"status": "ok",
 		"checks": checks,
 		"time":   time.Now().UTC().Format(time.RFC3339),
