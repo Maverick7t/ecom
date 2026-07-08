@@ -1,11 +1,14 @@
-package platform
+package telemetry
 
 import (
 	"context"
 	"fmt"
 	"log/slog"
 
+	"github.com/Maverick7t/ecom/internal/platform/config"
+
 	"go.opentelemetry.io/otel"
+	stdouttrace "go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -18,7 +21,7 @@ type Telemetry struct {
 	Tracer        trace.Tracer
 }
 
-func NewTelemetry(ctx context.Context, cfg *Config, logger *slog.Logger) (*Telemetry, error) {
+func NewTelemetry(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*Telemetry, error) {
 	res, err := resource.New(ctx,
 		resource.WithAttributes(
 			semconv.ServiceName(cfg.OTELServiceName),
@@ -26,7 +29,12 @@ func NewTelemetry(ctx context.Context, cfg *Config, logger *slog.Logger) (*Telem
 		),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("create otlp exporter: %w", err)
+		return nil, fmt.Errorf("create otel resource: %w", err)
+	}
+
+	exporter, err := stdouttrace.New()
+	if err != nil {
+		return nil, fmt.Errorf("create stdout exporter: %w", err)
 	}
 
 	tp := sdktrace.NewTracerProvider(
