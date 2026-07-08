@@ -1,63 +1,76 @@
 package main
 
 import (
+	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
+
 	"github.com/Maverick7t/ecom/internal/api"
-	"github.com/YOURUSERNAME/product-intelligence/internal/platform"
+	"github.com/Maverick7t/ecom/internal/platform/config"
+	"github.com/Maverick7t/ecom/internal/platform/database"
+	"github.com/Maverick7t/ecom/internal/platform/logger"
+	"github.com/Maverick7t/ecom/internal/platform/telemetry"
 )
 
 func main() {
-	ctx := ocntext.Background()
+	// load local env for development
+	_ = godotenv.Load(".env.local")
+
+	ctx := context.Background()
+
+	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("config error", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	logger := platform.NewLogger(cfg)
+	log := logger.NewLogger(cfg)
 
-	tel, err := platform.NewTelemetry(ctx, cfg, logger)
+	tel, err := telemetry.NewTelemetry(ctx, cfg, log)
 	if err != nil {
-		logger.Error("telemetry error", slog.Any("error", err))
+		log.Error("telemetry error", slog.Any("error", err))
 		os.Exit(1)
 	}
 
-	db, err := platform.NewDB(ctx, cfg, logger)
+	db, err := database.NewDB(ctx, cfg, log)
 	if err != nil {
-		logger.Error("database error", slog.Any("error", err))
+		log.Error("database error", slog.Any("error", err))
 		os.Exit(1)
 	}
 	defer db.Close()
 
 	srv := &http.Server{
 		Addr:         ":" + cfg.AppPort,
-		Handler:      api.NewRouter(cfg, db, logger),
+		Handler:      api.NewRouter(cfg, db, log),
 		ReadTimeout:  15 * time.Second,
 		WriteTimeout: 30 * time.Second,
 		IdleTimeout:  60 * time.Second,
 	}
 
 	go func() {
-		logger.Info("server satartind", slog.String("addr", srv.Addr), slog.String("env", cfg.AppEnv))
-		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServeClosed) {
-			logger.Error("server error", slog.Any("error", err))
+		log.Info("server starting", slog.String("addr", srv.Addr), slog.String("env", cfg.AppEnv))
+		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			log.Error("server error", slog.Any("error", err))
 			os.Exit(1)
 		}
 	}()
 
-	quit ;= make(chan os.Signal, 1)
-	signal.Notify(quit, suscall.SIGINT, syscall.SIGTERM)
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	logger.Info("shutting down....")
+	log.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	defer cancel()
 
-	srv.Shutdown(shutdownCtx)
-	tel.Shutdown(shutdownCtx)
-	logger.Info("stopped")
-
+	_ = srv.Shutdown(shutdownCtx)
+	_ = tel.Shutdown(shutdownCtx)
+	log.Info("stopped")
 }
