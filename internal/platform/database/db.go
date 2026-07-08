@@ -1,4 +1,4 @@
-package platform
+package database
 
 import (
 	"context"
@@ -6,10 +6,11 @@ import (
 	"log/slog"
 	"time"
 
+	"github.com/Maverick7t/ecom/internal/platform/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-func NewDB(ctx context.Context, cfg *Config, logger *slog.Logger) (*pgxpool.pool, error) {
+func NewDB(ctx context.Context, cfg *config.Config, logger *slog.Logger) (*pgxpool.Pool, error) {
 	poolCfg, err := pgxpool.ParseConfig(cfg.DatabaseURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse database url: %w", err)
