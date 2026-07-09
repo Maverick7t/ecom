@@ -132,3 +132,16 @@ CREATE TABLE users (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_active_at TIMESTAMPTZ
 );
+
+
+----------------------- Saved searches -------------------------------------
+
+CREATE TABLE saved_searches (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    query      TEXT NOT NULL,
+    filters    JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+ 
+CREATE INDEX idx_saved_searches_user_id ON saved_searches(user_id, created_at DESC);
