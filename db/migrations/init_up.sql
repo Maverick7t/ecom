@@ -134,6 +134,18 @@ CREATE TABLE users (
 );
 
 
+----------------------- Saved Products -------------------------------------
+
+CREATE TABLE saved_products (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(user_id, product_id)
+);
+
+CREATE INDEX idx_saved_products_user_id ON saved_products(user_id, created_at DESC);
+
 ----------------------- Saved searches -------------------------------------
 
 CREATE TABLE saved_searches (
