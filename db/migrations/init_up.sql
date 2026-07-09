@@ -157,3 +157,16 @@ CREATE TABLE saved_searches (
 );
  
 CREATE INDEX idx_saved_searches_user_id ON saved_searches(user_id, created_at DESC);
+
+------------------------ Collections -------------------------------------
+
+CREATE TABLE collections (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    description TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+);
+
+CREATE INDEX idx_collections_user_id ON collections(user_id);
+
