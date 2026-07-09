@@ -170,3 +170,11 @@ CREATE TABLE collections (
 
 CREATE INDEX idx_collections_user_id ON collections(user_id);
 
+------------------------ Collection Products -------------------------------------
+
+CREATE TABLE collection_products (
+    collection_id UUID NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+    added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    PRIMARY KEY (collection_id, product_id)
+)
