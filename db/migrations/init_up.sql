@@ -107,3 +107,18 @@ CREATE TABLE product_summaries (
     model TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+--------------------- Product reviews meta -------------------------------------
+
+CREATE TABLE product_reviews_meta (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    review_count INT NOT NULL DEFAULT 0,
+    avg_rating NUMERIC(3, 2),
+    rating_distribution JSONB NOT NULL DEFAULT '{}'::jsonb,
+    review_velocity NUMERIC(10, 4),
+    helpfulness_ratio NUMERIC(5, 4),
+    raw_reviews_r2_path TEXT,
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
