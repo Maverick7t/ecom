@@ -61,3 +61,17 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_products_fts
 Before INSERT OR UPDATE ON products
 FOR EACH ROW EXECUTE FUNCTION products_fts_trigger();
+
+
+----------------- Product Features -------------------------------------
+
+CREATE TABLE product_features (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    senetiment_score NUMERIC(5, 4),
+    quality_score NUMERIC(5, 4),
+    review_velocity NUMERIC(10, 4)
+    brand_score NUMERIC(5, 4),
+    helpfulness_ration NNUMERIC(5, 4),
+    computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
