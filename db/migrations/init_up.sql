@@ -122,3 +122,13 @@ CREATE TABLE product_reviews_meta (
     computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+---------------------- Product Users -------------------------------------
+
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    email TEXT UNIQUE NOT NULL,
+    display_name TEXT,
+    avtar_url TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_active_at TIMESTAMPTZ
+);
