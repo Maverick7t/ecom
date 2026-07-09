@@ -78,4 +78,18 @@ CREATE TABLE product_features (
 
 CREATE INDEX idx_product_features_quality ON product_features(quality_score DESC);
 CREATE INDEX idx_product_features_senitiment ON product_features(senntiment_score DESC);
-   
+
+
+------------------ Product Embeddings -------------------------------------
+
+CREATE TABLE product_embeddings (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    embedding VECTOR(384) NOT NULL,
+    model TEXT NOT NULL DEFAULT 'all-MiniLM-L6-v2',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_product_embeddings_hnsw
+    ON product_embeddings USING hnsw (embedding vector_cosine_ops)
+    WITH (m = 16, ef_construction = 64);
