@@ -93,3 +93,17 @@ CREATE TABLE product_embeddings (
 CREATE INDEX idx_product_embeddings_hnsw
     ON product_embeddings USING hnsw (embedding vector_cosine_ops)
     WITH (m = 16, ef_construction = 64);
+
+
+------------------- Product Summaries -------------------------------------
+
+CREATE TABLE product_summaries (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    porduct_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    pros TEXT[] NOT NULL DEFAULT '{}',
+    cons TEXT[] NOT NULL DEFAULT '{}',
+    summary TEXT,
+    verdict TEXT,
+    model TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
