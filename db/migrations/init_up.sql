@@ -75,3 +75,7 @@ CREATE TABLE product_features (
     helpfulness_ration NNUMERIC(5, 4),
     computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE INDEX idx_product_features_quality ON product_features(quality_score DESC);
+CREATE INDEX idx_product_features_senitiment ON product_features(senntiment_score DESC);
+   
