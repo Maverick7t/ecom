@@ -36,4 +36,28 @@ CREATE TABLE products (
     fts_vector TSVECTOR,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-)
+
+    CONSTRAINT chk_products_published_staus CHECK (published_status IN ('ACTIVE', 'INACTIVE', 'ARCHIVED')),
+    CONSTRAINT chk_products_condition CHECK (condition IN ('New', 'Used', 'Refurbished'))
+);
+
+CREATE INDEX idx_products_avg_rating ON products(avg_rating DESC NULLS LAST);
+CREATE INDEX idx_products_review_count ON products(review_count DESC);
+CREATE INDEX idx_products_fts ON products USING GIN(fts_vector);
+CREATE INDEX idx_products_brand ON products(brand);
+CREATE INDEX idx_products_published ON products(published_status);
+
+CREATE FUNCTION products_fts_trigger() RETURNS trigger AS $$
+BEGIN
+    NEW.fts_vector := to_tsvector('english',
+        coalesce(NEW.title, '') || ' ' ||
+        coalesce(NEW.brand, '') || ' ' ||
+        coalesce(NEW.description, ''));
+    NEW.updated_at := NOW();
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_products_fts
+Before INSERT OR UPDATE ON products
+FOR EACH ROW EXECUTE FUNCTION products_fts_trigger();
