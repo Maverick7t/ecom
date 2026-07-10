@@ -233,3 +233,13 @@ CREATE TABLE orders (
 
 CREATE INDEX idx_orders_user_id ON orders(user_id, placed_at DESC);
 
+CREATE TABLE order_items (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL REFERENCES products(id) ON DELETE SET NULL,
+    quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    unit_price NUMERIC(10, 2) NOT NULL,
+    title TEXT NOT NULL -- snapshot at order time
+);
+
+CREATE INDEX idx_order_items_order_id ON order_items(order_id);
