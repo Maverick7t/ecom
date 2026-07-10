@@ -10,7 +10,7 @@ CREATE TABLE categories (
     slug TEXT UNIQUE NOT NULL,
     name TEXT NOT NULL,
     product_count INT NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_categories_parent_id ON categories(parent_id);
@@ -59,7 +59,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 CREATE TRIGGER trg_products_fts
-Before INSERT OR UPDATE ON products
+BEFORE INSERT OR UPDATE ON products
 FOR EACH ROW EXECUTE FUNCTION products_fts_trigger();
 
 
@@ -70,14 +70,14 @@ CREATE TABLE product_features (
     product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
     senetiment_score NUMERIC(5, 4),
     quality_score NUMERIC(5, 4),
-    review_velocity NUMERIC(10, 4)
+    review_velocity NUMERIC(10, 4),
     brand_score NUMERIC(5, 4),
-    helpfulness_ration NNUMERIC(5, 4),
+    helpfulness_ration NUMERIC(5, 4),
     computed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_product_features_quality ON product_features(quality_score DESC);
-CREATE INDEX idx_product_features_senitiment ON product_features(senntiment_score DESC);
+CREATE INDEX idx_product_features_senitiment ON product_features(senetiment_score DESC);
 
 
 ------------------ Product Embeddings -------------------------------------
@@ -99,7 +99,7 @@ CREATE INDEX idx_product_embeddings_hnsw
 
 CREATE TABLE product_summaries (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    porduct_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
+    product_id UUID NOT NULL UNIQUE REFERENCES products(id) ON DELETE CASCADE,
     pros TEXT[] NOT NULL DEFAULT '{}',
     cons TEXT[] NOT NULL DEFAULT '{}',
     summary TEXT,
@@ -128,7 +128,7 @@ CREATE TABLE users (
     id UUID PRIMARY KEY,
     email TEXT UNIQUE NOT NULL,
     display_name TEXT,
-    avtar_url TEXT,
+    avatar_url TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     last_active_at TIMESTAMPTZ
 );
@@ -165,7 +165,7 @@ CREATE TABLE collections (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     name TEXT NOT NULL,
     description TEXT,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX idx_collections_user_id ON collections(user_id);
@@ -177,7 +177,7 @@ CREATE TABLE collection_products (
     product_id UUID NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (collection_id, product_id)
-)
+);
 
 ------------------------  Chat session -------------------------------------
 
@@ -196,7 +196,7 @@ CREATE TABLE chat_messages (
     session_id UUID NOT NULL REFERENCES chat_sessions(id) ON DELETE CASCADE,
     role TEXT NOT NULL,
     content TEXT NOT NULL,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 
 );
 
@@ -224,7 +224,7 @@ CREATE TABLE orders (
     total_amount NUMERIC(10, 2) NOT NULL,
     currency TEXT NOT NULL DEFAULT 'USD',
     shipping_name TEXT,
-    shupping_address JSONBB,
+    shipping_address JSONB,
     placed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
 
@@ -236,8 +236,8 @@ CREATE INDEX idx_orders_user_id ON orders(user_id, placed_at DESC);
 CREATE TABLE order_items (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
-    product_id UUID NOT NULL REFERENCES products(id) ON DELETE SET NULL,
-    quantity INT NOT NULL DEFAULT 1 CHECK (quantity > 0),
+    product_id UUID REFERENCES products(id) ON DELETE SET NULL,
+    quantity INT NOT NULL CHECK (quantity > 0),
     unit_price NUMERIC(10, 2) NOT NULL,
     title TEXT NOT NULL -- snapshot at order time
 );
@@ -256,7 +256,7 @@ CREATE TABLE notifications (
     payload JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 
-    CONSTRAINT chk_notifications_type CHECK (type IN ('SYSTEM', 'PRODUCT', 'ORDER', 'PROMOTION'))
+    CONSTRAINT chk_notifications_type CHECK (type IN ('SYSTEM', 'PRODUCT', 'ORDER'))
 );
 
 CREATE INDEX idx_notifications_user_id ON notifications(user_id, is_read, created_at DESC);
@@ -268,13 +268,13 @@ CREATE TABLE sync_runs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     job_type TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'RUNNING',
-    record_in INT NOT NULL DEFAULT 0,
-    record_out INT NOT NULL DEFAULT 0,
+    records_in INT NOT NULL DEFAULT 0,
+    records_out INT NOT NULL DEFAULT 0,
     error_message TEXT,
     started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     completed_at TIMESTAMPTZ,
 
-    CONSTRAINT chk_sync_runs_job_type CHECK (job_type IN ('RUNNING', 'COMPLETED', 'FAILED'))
+    CONSTRAINT chk_sync_runs_status CHECK (status IN ('RUNNING', 'COMPLETED', 'FAILED'))
 );
 
-CREATE INDEX idx_sync_runs_job_type ON sync_runs(job_type, status, started_at DESC);
+CREATE INDEX idx_sync_runs_job_type ON sync_runs(job_type, started_at DESC);
