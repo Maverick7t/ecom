@@ -243,3 +243,20 @@ CREATE TABLE order_items (
 );
 
 CREATE INDEX idx_order_items_order_id ON order_items(order_id);
+
+---------------------------  Notifications -------------------------------------
+
+CREATE TABLE notifications (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    is_read BOOLEAN NOT NULL DEFAULT FALSE,
+    payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    CONSTRAINT chk_notifications_type CHECK (type IN ('SYSTEM', 'PRODUCT', 'ORDER', 'PROMOTION'))
+);
+
+CREATE INDEX idx_notifications_user_id ON notifications(user_id, is_read, created_at DESC);
