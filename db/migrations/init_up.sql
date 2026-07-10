@@ -213,3 +213,23 @@ CREATE TABLE cart_items (
     added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (user_id, product_id)
 );
+
+
+--------------------------  Orders -------------------------------------
+
+CREATE TABLE orders (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'PENDING',
+    total_amount NUMERIC(10, 2) NOT NULL,
+    currency TEXT NOT NULL DEFAULT 'USD',
+    shipping_name TEXT,
+    shupping_address JSONBB,
+    placed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+
+    CONSTRAINT chk_orders_status CHECK (status IN ('PENDING', 'COMPLETED', 'CANCELLED'))
+);
+
+CREATE INDEX idx_orders_user_id ON orders(user_id, placed_at DESC);
+
