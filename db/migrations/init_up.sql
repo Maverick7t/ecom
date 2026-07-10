@@ -260,3 +260,21 @@ CREATE TABLE notifications (
 );
 
 CREATE INDEX idx_notifications_user_id ON notifications(user_id, is_read, created_at DESC);
+
+
+----------------------------  Sync runs -------------------------------------
+
+CREATE TABLE sync_runs (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    job_type TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'RUNNING',
+    record_in INT NOT NULL DEFAULT 0,
+    record_out INT NOT NULL DEFAULT 0,
+    error_message TEXT,
+    started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    completed_at TIMESTAMPTZ,
+
+    CONSTRAINT chk_sync_runs_job_type CHECK (job_type IN ('RUNNING', 'COMPLETED', 'FAILED'))
+);
+
+CREATE INDEX idx_sync_runs_job_type ON sync_runs(job_type, status, started_at DESC);
