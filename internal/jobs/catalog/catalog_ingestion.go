@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
@@ -130,16 +130,24 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 			imageURL = &rec.Images[0].Large
 		}
 
+		var price pgtype.Numeric
+		if rec.Price != nil {
+			if err := price.Scan(*rec.Price); err != nil {
+				w.logger.Warn("skip invalid price", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+				continue
+			}
+		}
+
 		product, err := w.queries.UpsertProduct(ctx, dbgen.UpsertProductParams{
 			ParentAsin:  rec.ParentAsin,
 			Title:       title,
 			Brand:       nilIfEmpty(rec.Store),
 			Description: nilIfEmpty(description),
-			Price:       rec.Price,
-			Currency:    strPtr("USD"),
+			Price:       price,
+			Currency:    "USD",
 			ImageUrl:    imageURL,
 			ProductType: nilIfEmpty(rec.MainCategory),
-			Condition:   strPtr("New"),
+			Condition:   "New",
 		})
 		if err != nil {
 			w.logger.Error("upsert product failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
@@ -166,9 +174,9 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		}
 
 		// idempotency key: product_id + source_batch_date (execution_phase 2.3)
-		if _, err := riverClient.Insert(ctx, reviews.ReviewIngestionArgs{
-			ProductID:       product.ID.String(),
-			SourceASIN:      product.ParentAsin,
+		if _, err := riverClient.Insert(ctx, reviews.ReviewsIngestionArgs{
+			ProducedID:      product.ID.String(),
+			SourceAsin:      product.ParentAsin,
 			SourceBatchDate: batchDate,
 		}, &river.InsertOpts{
 			UniqueOpts: river.UniqueOpts{ByArgs: true},
@@ -189,7 +197,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	})
 }
 
-func (w *Worker) failRun(ctx context.Context, syncRunID uuid.UUID, cause error) error {
+func (w *Worker) failRun(ctx context.Context, syncRunID pgtype.UUID, cause error) error {
 	if err := w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
 		ID:           syncRunID,
 		Status:       "FAILED",
