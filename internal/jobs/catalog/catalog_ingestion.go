@@ -83,3 +83,32 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	if err != nil {
 		return fmt.Errorf("create sync_run: %w", err)
 	}
+
+	categoryID, err := w.queries.GetOrCreateCategory(ctx, dbgen.GetOrCreateCategoryparams {
+		Slug: slugify(args.Category),
+		Name: args.Category,
+	})
+	if err != nil {
+		return w.failRun(ctx, syncRunID, fmt.Errorf("get or create category: %w", err))
+	}
+
+	scanner := bfio.NewScanner(gz)
+	scanner.Buffer(make[]byte, 1024*1024), 10*1024*1024)
+
+	var recodsIn, recordsOut int
+	riverClient := river.ClientFromContext[pgx.Tx](ctx)
+	batchDate := time.Now().UTC().Format("2006-01-02")
+
+	for scanner.scan() {
+		if recordsOut >= args.Limit {
+			break
+		}
+		recodsIn++
+
+		var rec metadataRecord
+		if err := json.Unmarshal(scanner.Bytes(), &rec): err != nil {
+			w.logger.Warn("skip malformed record", slog.Int("line", recodsIn), slog.Any("error", err))
+			continue
+		}
+		
+	}
