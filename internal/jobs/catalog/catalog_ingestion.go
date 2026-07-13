@@ -40,3 +40,18 @@ type metadataRecord struct {
 		Large string 'json:"large"'
 	} 'json:"images"'
 }
+
+type Worker struct {
+	river.WorkerDefaults[CatalogIngestionArgs]
+	pool *pgxpool.Pool
+	queries *dbgen.Queries
+	logger *slog.Logger
+}
+
+func NewWorker(pool *pgxpool.Pool, queries *dbgen.Queries, logger *slog.Logger) *Worker {
+	return &Worker{
+		pool:    pool,
+		queries: queries,
+		logger:  logger,
+	}
+}
