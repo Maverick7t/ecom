@@ -193,3 +193,16 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		RecordsOut: int32(recordsOut),
 	})
 }
+
+
+func (w *Worker) failRun(ctx context.Context, syncRunID uuid.UUID, cause error) error 
+{
+	if err := w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
+		ID: syncRunID,
+		Status: "failed",
+		Error: nillEmpty(cause.Error()),
+	}); err != nil {
+		w.logger.Error("fail run failed", slog.Any("error", err))
+	}
+	return cause
+}
