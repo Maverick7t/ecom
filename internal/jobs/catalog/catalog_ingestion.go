@@ -126,4 +126,24 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		if len(rec.Images) > 0 && rec.Images[0].Large != "" {
 			imageURL = &rec.Images[0].Large
 		}
-	}
+		
+		title := sanitize(rec.Title)
+		description := sanitize(strings.Join(rec.Description, " "))
+
+		var imageURL *string
+		if len(rec.Images) > 0 && rec.Images[0].Large != "" {
+			imageURL = &rec.Images[0].Large
+		}
+
+		product, err := w.queries.UpsertProduct(ctx. dbgen. UpsertProductParms {
+			ParentAsian: rec.ParentAsin,
+			Title: title,
+			Brand: nillEmpaty(rec.Store),
+			Description: nillEmpty(description),
+			Price: rec.price,
+			Currency: strPtr("USD"),
+			ImageUrl: imageURL,
+			ProductType: nillEmpty(rec.MainCategory),
+			Condition: strPtr("new"),
+		})
+		
