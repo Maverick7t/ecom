@@ -110,5 +110,20 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 			w.logger.Warn("skip malformed record", slog.Int("line", recodsIn), slog.Any("error", err))
 			continue
 		}
-		
+
+		if !matcheCategory(rec.MainCategory, rec.Categories, args.Category) {
+			continue
+		}
+		if rec.ParentAsin == "" || rec.Title == "" {
+			w.logger.Warn("skip invalid record - missing required field", slog.String ("parent_asin", rec.ParentAsin))
+			continue
+		}
+
+		title := sanitize(rec.Title)
+		description := sanitize(strings.Join(rec.Description, " "))
+
+		var imageURL *string 
+		if len(rec.Images) > 0 && rec.Images[0].Large != "" {
+			imageURL = &rec.Images[0].Large
+		}
 	}
