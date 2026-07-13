@@ -206,3 +206,16 @@ func (w *Worker) failRun(ctx context.Context, syncRunID uuid.UUID, cause error) 
 	}
 	return cause
 }
+
+func matchesCategory(mainCat string, categories []string, target string) bool {
+	if strings.EqualFold(mainCat, target) {
+		return true
+	}
+	for _, c := range categories {
+		if strings.EqualFold(c, target) {
+			return true
+		}
+	}
+	return false
+	
+}
