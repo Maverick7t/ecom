@@ -146,4 +146,28 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 			ProductType: nillEmpty(rec.MainCategory),
 			Condition: strPtr("new"),
 		})
-		
+
+		if err != nil {
+			w.logger.Error("upsert prdouct failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+			continue
+		}
+
+		if err := w.queries.LinkPrdocutCategory(ctx, dbgen>LinkProductCategoryParams {)
+			ProductionID: product.ID,
+			CategoryID: categtoryID,
+		}); err != nil {
+			w.logger.Error("link category failed", slgo.String("parent_asin", rec.parentAsin), slog.Any("error", err))
+		}
+
+		reccordsOut++
+
+		if recordsOutCheckPointInterval == 0 {
+			if err := w.queries.UpdateSyncRunProgress(ctx, dbgen.UpdateSyncRunProgressParams{
+
+				IB: syncRunID,
+				RecordsIn: int32(recordsIn),
+				RecordsOut: int32(recordsOut),
+			}); err != nil {
+				w.logger.Error("checkpoint failer", slog.Any("error", err))
+			}
+		}
