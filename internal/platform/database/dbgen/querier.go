@@ -11,7 +11,13 @@ import (
 )
 
 type Querier interface {
+	CompleteSyncRun(ctx context.Context, arg CompleteSyncRunParams) error
+	CreateSyncRun(ctx context.Context, jobType string) (pgtype.UUID, error)
+	GetOrCreateCategory(ctx context.Context, arg GetOrCreateCategoryParams) (pgtype.UUID, error)
 	GetProductByID(ctx context.Context, id pgtype.UUID) (Product, error)
+	LinkProductCategory(ctx context.Context, arg LinkProductCategoryParams) error
+	UpdateSyncRunProgress(ctx context.Context, arg UpdateSyncRunProgressParams) error
+	UpsertProduct(ctx context.Context, arg UpsertProductParams) (UpsertProductRow, error)
 }
 
 var _ Querier = (*Queries)(nil)

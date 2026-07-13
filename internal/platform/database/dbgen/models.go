@@ -109,6 +109,11 @@ type Product struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ProductCategory struct {
+	ProductID  pgtype.UUID `json:"product_id"`
+	CategoryID pgtype.UUID `json:"category_id"`
+}
+
 type ProductEmbedding struct {
 	ID        pgtype.UUID        `json:"id"`
 	ProductID pgtype.UUID        `json:"product_id"`
