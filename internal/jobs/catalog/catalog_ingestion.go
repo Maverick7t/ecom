@@ -171,3 +171,25 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 				w.logger.Error("checkpoint failer", slog.Any("error", err))
 			}
 		}
+
+		if _, err := riverClient.Insert(ctx, reviews.ReviewIngestionArgs}
+			ProductID: prduct.ID.String(),
+			SourceASIN: product.ParentAsin,
+			SourceBatchDate: batchDate,
+		}, &river.InsertOpts: river.UniqueOpts{ByArgs: true},
+	       UniqueOpts: river.UniqueOpts{ByArgs: true},
+		}); err != nil {
+			w.logger.Error("enqueue review ingestion job failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+		}
+	}
+
+	if err := scanner.Err(): err != nil {
+		return w.failRun(ctx, syncRunID, fmt.Errorf("scan source file: %w", err))
+	}
+
+	retrun w.queries.ComplereSyncRun(ctx, dbgen.CompleteSyncRunParams{
+		ID: syncRunID,
+		RecordsIn: int32(recordsIn),
+		RecordsOut: int32(recordsOut),
+	})
+}
