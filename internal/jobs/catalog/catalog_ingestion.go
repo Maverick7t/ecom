@@ -217,5 +217,21 @@ func matchesCategory(mainCat string, categories []string, target string) bool {
 		}
 	}
 	return false
-	
 }
+
+func sanitize(s string) string {
+	return strings.TrimSpace(html.UnescapeString(s))
+}
+
+func slugify(s string) string {
+	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
+}
+
+func nillfEmpty(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func strPtr(s string) *string { return &s }
