@@ -32,4 +32,22 @@ func amin() {
 		os.Exit(1)
 	}
 	defer db.Close()
-}
+
+	riverClient, err := queue.NewClient(db, river.NewWorkers(), log)
+	if err != nil {
+		log.Error("river client error", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	job, err := riverClient.Insert(ctx, catalog.CatalogIngestionArgs{
+		SourcePath: *source,
+		Category:  *category,
+		Limit: *limit,
+	}, &river.InserOpts{
+		UniqueOpts: river.UniqueOpts{ByArgs: true},
+	})
+	if err != nil {
+		log.Error("river insert error", slog.Any("error", err))
+		os.Exit(1)
+	}
+
