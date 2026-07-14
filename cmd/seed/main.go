@@ -43,7 +43,7 @@ func amin() {
 		SourcePath: *source,
 		Category:  *category,
 		Limit: *limit,
-	}, &river.InserOpts{
+	}, &river.InsertOpts{
 		UniqueOpts: river.UniqueOpts{ByArgs: true},
 	})
 	if err != nil {
@@ -51,3 +51,9 @@ func amin() {
 		os.Exit(1)
 	}
 
+	log.Info("catalog_ingestion enqueued",
+		slog.String("job_id", job.ID),
+		slog.String("limit", *limit),
+		slog.String("category", *category),
+	)
+	
