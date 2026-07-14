@@ -10,12 +10,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
-
+	""github.com/joho/godotenv"
+	"github.com/riverqueue/river"
+ 
 	"github.com/Maverick7t/ecom/internal/api"
+	"github.com/Maverick7t/ecom/internal/jobs/catalog"
 	"github.com/Maverick7t/ecom/internal/platform/config"
 	"github.com/Maverick7t/ecom/internal/platform/database"
+	"github.com/Maverick7t/ecom/internal/platform/database/dbgen"
 	"github.com/Maverick7t/ecom/internal/platform/logger"
+	"github.com/Maverick7t/ecom/internal/platform/queue"
 	"github.com/Maverick7t/ecom/internal/platform/telemetry"
 )
 
@@ -71,6 +75,12 @@ func main() {
 	defer cancel()
 
 	_ = srv.Shutdown(shutdownCtx)
+
+	riverCancel()
+	if err := riverClient.Stop(shutdownCtx); err != nil {
+		log.Error("river client stop error", slog.Any("error", err))
+	}
+		
 	_ = tel.Shutdown(shutdownCtx)
 	log.Info("stopped")
 }
