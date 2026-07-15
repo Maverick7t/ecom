@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	""github.com/joho/godotenv"
+	"github.com/joho/godotenv"
 	"github.com/riverqueue/river"
- 
+
 	"github.com/Maverick7t/ecom/internal/api"
 	"github.com/Maverick7t/ecom/internal/jobs/catalog"
 	"github.com/Maverick7t/ecom/internal/platform/config"
@@ -24,7 +24,6 @@ import (
 )
 
 func main() {
-	// load local env for development
 	_ = godotenv.Load(".env.local")
 
 	ctx := context.Background()
@@ -50,6 +49,23 @@ func main() {
 	}
 	defer db.Close()
 
+	// ---- River job queue ----
+	queries := dbgen.New(db)
+
+	workers := river.NewWorkers()
+	river.AddWorker(workers, catalog.NewWorker(db, queries, log))
+	// review, feature, embedding, summary workers registered here as each is built
+
+	riverClient, err := queue.NewClient(db, workers, log)
+	if err != nil {
+		log.Error("river client error", slog.Any("error", err))
+		os.Exit(1)
+	}
+
+	riverCtx, riverCancel := context.WithCancel(ctx)
+	go queue.Start(riverCtx, riverClient, log)
+
+	// ---- HTTP server ----
 	srv := &http.Server{
 		Addr:         ":" + cfg.AppPort,
 		Handler:      api.NewRouter(cfg, db, log),
@@ -80,7 +96,7 @@ func main() {
 	if err := riverClient.Stop(shutdownCtx); err != nil {
 		log.Error("river client stop error", slog.Any("error", err))
 	}
-		
+
 	_ = tel.Shutdown(shutdownCtx)
 	log.Info("stopped")
 }
