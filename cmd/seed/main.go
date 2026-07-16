@@ -12,6 +12,7 @@ import (
 	"github.com/Maverick7t/ecom/internal/jobs/catalog"
 	"github.com/Maverick7t/ecom/internal/platform/config"
 	"github.com/Maverick7t/ecom/internal/platform/database"
+	"github.com/Maverick7t/ecom/internal/platform/database/dbgen"
 	"github.com/Maverick7t/ecom/internal/platform/logger"
 	"github.com/Maverick7t/ecom/internal/platform/queue"
 )
@@ -46,10 +47,13 @@ func main() {
 	}
 	defer db.Close()
 
-	// Insert-only client: no workers registered, never call Start.
-	// VERIFY: confirm river.NewClient accepts an empty river.Workers{}
-	// for insert-only usage against your installed River version.
-	riverClient, err := queue.NewClient(db, river.NewWorkers(), log)
+	queries := dbgen.New(db)
+	workers := river.NewWorkers()
+	river.AddWorker(workers, catalog.NewWorker(db, queries, log))
+
+	// Insert-only client: never call Start(). River still requires the
+	// job kind registered in Workers to validate Insert() calls.
+	riverClient, err := queue.NewClient(db, workers, log)
 	if err != nil {
 		log.Error("river client error", slog.Any("error", err))
 		os.Exit(1)
