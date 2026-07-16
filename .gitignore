@@ -27,3 +27,10 @@ coverage.out
 # OS
 .DS_Store
 Thumbs.db
+
+# Local datasets
+data/
+
+# Compressed datasets
+*.jsonl.gz
+*.gz
