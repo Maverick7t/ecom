@@ -9,6 +9,7 @@ import (
 	"html"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -41,7 +42,7 @@ type metadataRecord struct {
 	Title        string   `json:"title"`
 	Store        string   `json:"store"` // used as brand
 	Description  []string `json:"description"`
-	Price        *string  `json:"price"` // dataset stores price as string or null
+	Price        any      `json:"price"` // observed: null; NOT verified as always string — handle number too
 	ParentAsin   string   `json:"parent_asin"`
 	Images       []struct {
 		Large string `json:"large"`
@@ -50,13 +51,14 @@ type metadataRecord struct {
 
 type Worker struct {
 	river.WorkerDefaults[CatalogIngestionArgs]
-	pool    *pgxpool.Pool
-	queries *dbgen.Queries
-	logger  *slog.Logger
+	pool          *pgxpool.Pool
+	queries       *dbgen.Queries
+	logger        *slog.Logger
+	categoryCache map[string]pgtype.UUID // key: parentID + "|" + slug, scoped to one job run
 }
 
 func NewWorker(pool *pgxpool.Pool, queries *dbgen.Queries, logger *slog.Logger) *Worker {
-	return &Worker{pool: pool, queries: queries, logger: logger}
+	return &Worker{pool: pool, queries: queries, logger: logger, categoryCache: make(map[string]pgtype.UUID)}
 }
 
 const checkpointInterval = 1000
@@ -87,16 +89,8 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		return fmt.Errorf("create sync_run: %w", err)
 	}
 
-	categoryID, err := w.queries.GetOrCreateCategory(ctx, dbgen.GetOrCreateCategoryParams{
-		Slug: slugify(args.Category),
-		Name: args.Category,
-	})
-	if err != nil {
-		return w.failRun(ctx, syncRunID, fmt.Errorf("get or create category: %w", err))
-	}
-
 	scanner := bufio.NewScanner(gz)
-	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
+	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 10MB max line size
 
 	var recordsIn, recordsOut int
 	riverClient := river.ClientFromContext[pgx.Tx](ctx)
@@ -123,19 +117,12 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		}
 
 		title := sanitize(rec.Title)
-		description := sanitize(strings.Join(rec.Description, " "))
+		description := sanitize(strings.Join(rec.Description, "\n\n"))
+		price := normalizePrice(rec.Price)
 
 		var imageURL *string
 		if len(rec.Images) > 0 && rec.Images[0].Large != "" {
 			imageURL = &rec.Images[0].Large
-		}
-
-		var price pgtype.Numeric
-		if rec.Price != nil {
-			if err := price.Scan(*rec.Price); err != nil {
-				w.logger.Warn("skip invalid price", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
-				continue
-			}
 		}
 
 		product, err := w.queries.UpsertProduct(ctx, dbgen.UpsertProductParams{
@@ -143,7 +130,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 			Title:       title,
 			Brand:       nilIfEmpty(rec.Store),
 			Description: nilIfEmpty(description),
-			Price:       price,
+			Price:       priceToNumeric(price),
 			Currency:    "USD",
 			ImageUrl:    imageURL,
 			ProductType: nilIfEmpty(rec.MainCategory),
@@ -154,11 +141,16 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 			continue
 		}
 
-		if err := w.queries.LinkProductCategory(ctx, dbgen.LinkProductCategoryParams{
-			ProductID:  product.ID,
-			CategoryID: categoryID,
-		}); err != nil {
-			w.logger.Error("link category failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+		leafCategoryID, err := w.resolveCategoryChain(ctx, rec.Categories, rec.MainCategory)
+		if err != nil {
+			w.logger.Error("resolve category chain failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+		} else {
+			if err := w.queries.LinkProductCategory(ctx, dbgen.LinkProductCategoryParams{
+				ProductID:  product.ID,
+				CategoryID: leafCategoryID,
+			}); err != nil {
+				w.logger.Error("link category failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
+			}
 		}
 
 		recordsOut++
@@ -175,8 +167,8 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 
 		// idempotency key: product_id + source_batch_date (execution_phase 2.3)
 		if _, err := riverClient.Insert(ctx, reviews.ReviewsIngestionArgs{
-			ProducedID:      product.ID.String(),
-			SourceAsin:      product.ParentAsin,
+			ProductID:       product.ID.String(),
+			SourceASIN:      product.ParentAsin,
 			SourceBatchDate: batchDate,
 		}, &river.InsertOpts{
 			UniqueOpts: river.UniqueOpts{ByArgs: true},
@@ -197,11 +189,61 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	})
 }
 
+// resolveCategoryChain walks the Amazon category path (root -> leaf) and
+// creates/reuses each level with parent_id chained to the previous level,
+// per the locked self-referencing hierarchy decision. Falls back to a
+// single-level category from mainCategory if the path array is empty.
+// Returns the leaf category's id; the product is linked only to the leaf
+// (ancestors are reachable via parent_id walk, not duplicated as links).
+func (w *Worker) resolveCategoryChain(ctx context.Context, path []string, mainCategory string) (pgtype.UUID, error) {
+	if len(path) == 0 {
+		if mainCategory == "" {
+			return pgtype.UUID{}, fmt.Errorf("no category path and no main_category")
+		}
+		path = []string{mainCategory}
+	}
+
+	var parentID pgtype.UUID
+	var leafID pgtype.UUID
+
+	for _, name := range path {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			continue
+		}
+		slug := slugify(name)
+		cacheKey := parentCacheKey(parentID) + "|" + slug
+
+		if cached, ok := w.categoryCache[cacheKey]; ok {
+			leafID = cached
+			parentID = cached
+			continue
+		}
+
+		id, err := w.queries.GetOrCreateCategory(ctx, dbgen.GetOrCreateCategoryParams{
+			Slug:     slug,
+			Name:     name,
+			ParentID: parentID,
+		})
+		if err != nil {
+			return pgtype.UUID{}, fmt.Errorf("get or create category %q: %w", name, err)
+		}
+		w.categoryCache[cacheKey] = id
+		leafID = id
+		parentID = id
+	}
+
+	if !leafID.Valid {
+		return pgtype.UUID{}, fmt.Errorf("category path resolved to nothing")
+	}
+	return leafID, nil
+}
+
 func (w *Worker) failRun(ctx context.Context, syncRunID pgtype.UUID, cause error) error {
 	if err := w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
 		ID:           syncRunID,
 		Status:       "FAILED",
-		ErrorMessage: nilIfEmpty(cause.Error()),
+		ErrorMessage: strPtr(cause.Error()),
 	}); err != nil {
 		w.logger.Error("failed to mark sync_run FAILED", slog.Any("error", err))
 	}
@@ -228,6 +270,13 @@ func slugify(s string) string {
 	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
 }
 
+func parentCacheKey(parentID pgtype.UUID) string {
+	if !parentID.Valid {
+		return "root"
+	}
+	return parentID.String()
+}
+
 func nilIfEmpty(s string) *string {
 	if s == "" {
 		return nil
@@ -236,3 +285,46 @@ func nilIfEmpty(s string) *string {
 }
 
 func strPtr(s string) *string { return &s }
+
+func priceToNumeric(price *string) pgtype.Numeric {
+	if price == nil {
+		return pgtype.Numeric{}
+	}
+
+	var numeric pgtype.Numeric
+	if err := numeric.Scan(*price); err != nil {
+		return pgtype.Numeric{}
+	}
+	return numeric
+}
+
+// normalizePrice handles the three observed/possible JSON shapes for
+// price: null, a numeric literal, or a string (possibly with currency
+// symbols/commas). Anything else -> nil, product still ingested.
+func normalizePrice(raw any) *string {
+	switch v := raw.(type) {
+	case nil:
+		return nil
+	case float64:
+		if v < 0 {
+			return nil
+		}
+		formatted := strconv.FormatFloat(v, 'f', 2, 64)
+		return &formatted
+	case string:
+		cleaned := strings.TrimSpace(v)
+		cleaned = strings.TrimPrefix(cleaned, "$")
+		cleaned = strings.ReplaceAll(cleaned, ",", "")
+		if cleaned == "" {
+			return nil
+		}
+		val, err := strconv.ParseFloat(cleaned, 64)
+		if err != nil || val < 0 {
+			return nil
+		}
+		formatted := strconv.FormatFloat(val, 'f', 2, 64)
+		return &formatted
+	default:
+		return nil
+	}
+}
