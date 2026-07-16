@@ -51,19 +51,20 @@ func (q *Queries) CreateSyncRun(ctx context.Context, jobType string) (pgtype.UUI
 }
 
 const getOrCreateCategory = `-- name: GetOrCreateCategory :one
-INSERT INTO categories (slug, name)
-VALUES ($1, $2)
-ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+INSERT INTO categories (slug, name, parent_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (parent_id, slug) DO UPDATE SET name = EXCLUDED.name
 RETURNING id
 `
 
 type GetOrCreateCategoryParams struct {
-	Slug string `json:"slug"`
-	Name string `json:"name"`
+	Slug     string      `json:"slug"`
+	Name     string      `json:"name"`
+	ParentID pgtype.UUID `json:"parent_id"`
 }
 
 func (q *Queries) GetOrCreateCategory(ctx context.Context, arg GetOrCreateCategoryParams) (pgtype.UUID, error) {
-	row := q.db.QueryRow(ctx, getOrCreateCategory, arg.Slug, arg.Name)
+	row := q.db.QueryRow(ctx, getOrCreateCategory, arg.Slug, arg.Name, arg.ParentID)
 	var id pgtype.UUID
 	err := row.Scan(&id)
 	return id, err

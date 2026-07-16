@@ -23,9 +23,9 @@ VALUES ($1, $2)
 ON CONFLICT DO NOTHING;
 
 -- name: GetOrCreateCategory :one
-INSERT INTO categories (slug, name)
-VALUES ($1, $2)
-ON CONFLICT (slug) DO UPDATE SET name = EXCLUDED.name
+INSERT INTO categories (slug, name, parent_id)
+VALUES ($1, $2, $3)
+ON CONFLICT (parent_id, slug) DO UPDATE SET name = EXCLUDED.name
 RETURNING id;
 
 -- name: CreateSyncRun :one
