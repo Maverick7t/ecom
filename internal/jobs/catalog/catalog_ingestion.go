@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -26,23 +27,22 @@ import (
 // Open item #2 (resolved): one category per run, terminates after
 // Limit successfully filtered products.
 type CatalogIngestionArgs struct {
-	SourcePath string `json:"source_path"` // local path or R2-mounted path to metadata.jsonl.gz
-	Category   string `json:"category"`    // required, matches metadata main_category/categories
-	Limit      int    `json:"limit"`       // default 50000
+	SourcePath string `json:"source_path"`
+	Category   string `json:"category"`
+	Limit      int    `json:"limit"`
 }
 
 func (CatalogIngestionArgs) Kind() string { return "catalog_ingestion" }
 
-// metadataRecord mirrors the Amazon Reviews 2023 metadata JSONL schema.
-// NOT independently verified in this session — confirm field names
-// against your actual metadata.jsonl.gz before a full run.
+// metadataRecord mirrors the Amazon Reviews 2023 metadata JSONL schema,
+// confirmed against one real sample record.
 type metadataRecord struct {
 	MainCategory string   `json:"main_category"`
 	Categories   []string `json:"categories"`
 	Title        string   `json:"title"`
-	Store        string   `json:"store"` // used as brand
+	Store        string   `json:"store"`
 	Description  []string `json:"description"`
-	Price        any      `json:"price"` // observed: null; NOT verified as always string — handle number too
+	Price        any      `json:"price"` // null, number, or string — handled in normalizePrice
 	ParentAsin   string   `json:"parent_asin"`
 	Images       []struct {
 		Large string `json:"large"`
@@ -62,6 +62,14 @@ func NewWorker(pool *pgxpool.Pool, queries *dbgen.Queries, logger *slog.Logger) 
 }
 
 const checkpointInterval = 1000
+
+// Timeout overrides River's default per-job timeout. catalog_ingestion
+// processes every matched record sequentially (upsert + category chain +
+// review enqueue = multiple round trips each), which will exceed the
+// client default well before --limit=50000 completes.
+func (w *Worker) Timeout(job *river.Job[CatalogIngestionArgs]) time.Duration {
+	return 60 * time.Minute
+}
 
 func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs]) error {
 	args := job.Args
@@ -90,7 +98,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	}
 
 	scanner := bufio.NewScanner(gz)
-	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // 10MB max line size
+	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
 
 	var recordsIn, recordsOut int
 	riverClient := river.ClientFromContext[pgx.Tx](ctx)
@@ -167,7 +175,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 
 		// idempotency key: product_id + source_batch_date (execution_phase 2.3)
 		if _, err := riverClient.Insert(ctx, reviews.ReviewsIngestionArgs{
-			ProductID:       product.ID.String(),
+			ProductID:       uuidString(product.ID),
 			SourceASIN:      product.ParentAsin,
 			SourceBatchDate: batchDate,
 		}, &river.InsertOpts{
@@ -190,11 +198,8 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 }
 
 // resolveCategoryChain walks the Amazon category path (root -> leaf) and
-// creates/reuses each level with parent_id chained to the previous level,
-// per the locked self-referencing hierarchy decision. Falls back to a
-// single-level category from mainCategory if the path array is empty.
-// Returns the leaf category's id; the product is linked only to the leaf
-// (ancestors are reachable via parent_id walk, not duplicated as links).
+// creates/reuses each level with parent_id chained to the previous level.
+// Returns the leaf category's id; the product is linked only to the leaf.
 func (w *Worker) resolveCategoryChain(ctx context.Context, path []string, mainCategory string) (pgtype.UUID, error) {
 	if len(path) == 0 {
 		if mainCategory == "" {
@@ -274,7 +279,7 @@ func parentCacheKey(parentID pgtype.UUID) string {
 	if !parentID.Valid {
 		return "root"
 	}
-	return parentID.String()
+	return uuidString(parentID)
 }
 
 func nilIfEmpty(s string) *string {
@@ -286,11 +291,16 @@ func nilIfEmpty(s string) *string {
 
 func strPtr(s string) *string { return &s }
 
+// uuidString converts pgtype.UUID (raw [16]byte) to canonical hex-dashed
+// string form. pgtype.UUID does not implement Stringer itself.
+func uuidString(id pgtype.UUID) string {
+	return uuid.UUID(id.Bytes).String()
+}
+
 func priceToNumeric(price *string) pgtype.Numeric {
 	if price == nil {
 		return pgtype.Numeric{}
 	}
-
 	var numeric pgtype.Numeric
 	if err := numeric.Scan(*price); err != nil {
 		return pgtype.Numeric{}
