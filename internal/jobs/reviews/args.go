@@ -1,11 +1,17 @@
 package reviews
 
-// ReviewsIngestionArgs is enqueued by catalog_ingestion, one per product.
-// Idempotency key per execution_phase 2.3: product_id + source_batch_date.
+import "github.com/riverqueue/river"
+
+// ReviewsIngestionArgs — one job per category run, not per product.
+// See design correction: streaming the reviews file once and grouping
+// in-memory, rather than re-scanning per product.
 type ReviewsIngestionArgs struct {
-	ProductID       string `json:"product_id"`
-	SourceASIN      string `json:"source_asin"`
-	SourceBatchDate string `json:"source_batch_date"`
+	Category   string `json:"category"`
+	SourcePath string `json:"source_path"` // local path to reviews jsonl.gz
 }
 
 func (ReviewsIngestionArgs) Kind() string { return "reviews_ingestion" }
+
+func (ReviewsIngestionArgs) InsertOpts() river.InsertOpts {
+	return river.InsertOpts{MaxAttempts: 10}
+}
