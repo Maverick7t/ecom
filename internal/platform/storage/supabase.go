@@ -35,3 +35,20 @@ func (s *SupabaseStorage) Upload(ctx context.Context, path string, data []byte, 
 	if err != nil {
 		return fmt.Errorf("build storage request: %w", err)
 	}
+	req.Header.Set("Authorization", "Bearer "+s.serviceKey)
+	req.Header.Set("Content-Type", contentType)
+	req.Header.Set("x-upsert", "true")
+	req.Header.Set("apikey", s.serviceKey)
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("storage upload request: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return fmt.Errorf("storage upload failed: status=%d body=%s", resp.StatusCode, string(body))
+	}
+	return nil
+}
