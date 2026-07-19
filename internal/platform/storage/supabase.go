@@ -18,3 +18,12 @@ type SupabaseStorage struct {
 	serviceKey string
 	httpClient *http.Client
 }
+
+func NewSupabaseStorage(cfg *config.Config) *SupabaseStorage {
+	return &SupabaseStorage{
+		baseURL:    cfg.SupabaseURL + "/storage/v1",
+		bucket:     cfg.SupabaseStorageBucket,
+		serviceKey: cfg.SupabaseServiceRoleKey,
+		httpClient: &http.Client{Timeout: 30 * time.Second},
+	}
+}
