@@ -20,11 +20,7 @@ type Config struct {
 	NIMAPIKey  string
 	NIMBaseURL string
 
-	R2AccountID     string
-	R2AccessKey     string
-	R2SecretKey     string
-	R2Bucket        string
-	R2PublicBaseURL string
+	SupabaseStorageBucket string
 
 	OTELEndpoint    string
 	OTELServiceName string
@@ -49,10 +45,7 @@ func Load() (*Config, error) {
 		"SUPABASE_SERVICE_ROLE_KEY": &cfg.SupabaseServiceRoleKey,
 		"SUPABASE_JWT_SECRET":       &cfg.SupabaseJWTSecret,
 		"NVIDIA_NIM_API_KEY":        &cfg.NIMAPIKey,
-		"R2_ACCOUNT_ID":             &cfg.R2AccountID,
-		"R2_ACCESS_KEY":             &cfg.R2AccessKey,
-		"R2_SECRET_KEY":             &cfg.R2SecretKey,
-		"R2_BUCKET":                 &cfg.R2Bucket,
+		"SUPABASE_STORAGE_BUCKET":   &cfg.SupabaseStorageBucket,
 		"OTEL_ENDPOINT":             &cfg.OTELEndpoint,
 	}
 
