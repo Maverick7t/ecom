@@ -27,3 +27,11 @@ func NewSupabaseStorage(cfg *config.Config) *SupabaseStorage {
 		httpClient: &http.Client{Timeout: 30 * time.Second},
 	}
 }
+
+func (s *SupabaseStorage) Upload(ctx context.Context, path string, data []byte, contentType string) error {
+	url := fmt.Sprintf("%s/object/%s/%s", s.baseURL, s.bucket, path)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(data))
+	if err != nil {
+		return fmt.Errorf("build storage request: %w", err)
+	}
