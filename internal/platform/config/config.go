@@ -20,7 +20,12 @@ type Config struct {
 	NIMAPIKey  string
 	NIMBaseURL string
 
+	// SupabaseStorageBucket is required in prod only. LocalStorageDir is
+	// used in dev instead — see internal/platform/storage. R2 config was
+	// removed entirely; nothing in this codebase should reference R2_*
+	// env vars anymore.
 	SupabaseStorageBucket string
+	LocalStorageDir       string
 
 	OTELEndpoint    string
 	OTELServiceName string
@@ -37,6 +42,7 @@ func Load() (*Config, error) {
 		NIMBaseURL:      getEnv("NIM_BASE_URL", "https://integrate.api.nvidia.com/v1"),
 		OTELServiceName: getEnv("OTEL_SERVICE_NAME", "product-intelligence"),
 		RateLimitRPM:    getEnvInt("RATE_LIMIT_RPM", 100),
+		LocalStorageDir: getEnv("LOCAL_STORAGE_DIR", "./tmp/reviews"),
 	}
 
 	required := map[string]*string{
@@ -45,8 +51,17 @@ func Load() (*Config, error) {
 		"SUPABASE_SERVICE_ROLE_KEY": &cfg.SupabaseServiceRoleKey,
 		"SUPABASE_JWT_SECRET":       &cfg.SupabaseJWTSecret,
 		"NVIDIA_NIM_API_KEY":        &cfg.NIMAPIKey,
-		"SUPABASE_STORAGE_BUCKET":   &cfg.SupabaseStorageBucket,
 		"OTEL_ENDPOINT":             &cfg.OTELEndpoint,
+	}
+
+	// SUPABASE_STORAGE_BUCKET only fails startup in prod. Dev writes to
+	// LocalStorageDir instead and never touches Supabase Storage, so
+	// requiring the bucket var in dev would just be friction with no
+	// safety benefit.
+	if cfg.AppEnv == "prod" {
+		required["SUPABASE_STORAGE_BUCKET"] = &cfg.SupabaseStorageBucket
+	} else {
+		cfg.SupabaseStorageBucket = os.Getenv("SUPABASE_STORAGE_BUCKET")
 	}
 
 	missing := []string{}
@@ -58,8 +73,6 @@ func Load() (*Config, error) {
 		}
 		*dest = val
 	}
-
-	cfg.R2PublicBaseURL = os.Getenv("R2_PUBLIC_BASE_URL")
 
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %v", missing)
