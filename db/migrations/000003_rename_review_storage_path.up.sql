@@ -1,0 +1,1 @@
+ALTER TABLE product_reviews_meta RENAME COLUMN raw_reviews_r2_path TO raw_reviews_storage_path;
