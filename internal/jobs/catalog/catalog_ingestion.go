@@ -1,341 +1,346 @@
-package catalog
+package reviews
 
 import (
 	"bufio"
 	"compress/gzip"
+	"container/heap"
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"log/slog"
 	"os"
-	"strconv"
+	"sort"
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
-	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 
-	"github.com/Maverick7t/ecom/internal/jobs/reviews"
-	"github.com/Maverick7t/ecom/internal/platform/database/dbgen"
+	"github.com/Maverick7t/ecom/internal/jobs/features"
+	"github.com/Maverick7t/ecom/internal/platform/storage"
 )
 
-// CatalogIngestionArgs is the root job enqueued by cmd/seed.
-// Open item #2 (resolved): one category per run, terminates after
-// Limit successfully filtered products.
-type CatalogIngestionArgs struct {
-	SourcePath string `json:"source_path"`
-	Category   string `json:"category"`
-	Limit      int    `json:"limit"`
+type rawReview struct {
+	Rating           float64 `json:"rating"`
+	Title            string  `json:"title"`
+	Text             string  `json:"text"`
+	ASIN             string  `json:"asin"`
+	ParentASIN       string  `json:"parent_asin"`
+	UserID           string  `json:"user_id"`
+	Timestamp        int64   `json:"timestamp"` // assumed Unix ms — verify
+	HelpfulVote      int     `json:"helpful_vote"`
+	VerifiedPurchase bool    `json:"verified_purchase"`
 }
 
-func (CatalogIngestionArgs) Kind() string { return "catalog_ingestion" }
+type topHeap []rawReview
 
-// metadataRecord mirrors the Amazon Reviews 2023 metadata JSONL schema,
-// confirmed against one real sample record.
-type metadataRecord struct {
-	MainCategory string   `json:"main_category"`
-	Categories   []string `json:"categories"`
-	Title        string   `json:"title"`
-	Store        string   `json:"store"`
-	Description  []string `json:"description"`
-	Price        any      `json:"price"` // null, number, or string — handled in normalizePrice
-	ParentAsin   string   `json:"parent_asin"`
-	Images       []struct {
-		Large string `json:"large"`
-	} `json:"images"`
+func (h topHeap) Len() int           { return len(h) }
+func (h topHeap) Less(i, j int) bool { return h[i].HelpfulVote < h[j].HelpfulVote }
+func (h topHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h *topHeap) Push(x any)        { *h = append(*h, x.(rawReview)) }
+func (h *topHeap) Pop() any {
+	old := *h
+	n := len(old)
+	item := old[n-1]
+	*h = old[:n-1]
+	return item
+}
+
+const topN = 20
+
+type reviewAgg struct {
+	productID  string
+	count      int
+	ratingSum  float64
+	dist       map[int]int
+	firstTS    int64
+	lastTS     int64
+	helpfulSum int
+	top20      *topHeap
+}
+
+func newAgg(productID string) *reviewAgg {
+	th := &topHeap{}
+	heap.Init(th)
+	return &reviewAgg{
+		productID: productID,
+		dist:      map[int]int{1: 0, 2: 0, 3: 0, 4: 0, 5: 0},
+		top20:     th,
+	}
+}
+
+func (a *reviewAgg) add(r rawReview) {
+	a.count++
+	a.ratingSum += r.Rating
+
+	if star := int(r.Rating); star >= 1 && star <= 5 {
+		a.dist[star]++
+	}
+	if a.firstTS == 0 || r.Timestamp < a.firstTS {
+		a.firstTS = r.Timestamp
+	}
+	if r.Timestamp > a.lastTS {
+		a.lastTS = r.Timestamp
+	}
+	a.helpfulSum += r.HelpfulVote
+
+	if a.top20.Len() < topN {
+		heap.Push(a.top20, r)
+	} else if a.top20.Len() > 0 && (*a.top20)[0].HelpfulVote < r.HelpfulVote {
+		heap.Pop(a.top20)
+		heap.Push(a.top20, r)
+	}
+}
+
+func (a *reviewAgg) topSortedDesc() []rawReview {
+	out := make([]rawReview, len(*a.top20))
+	copy(out, *a.top20)
+	sort.Slice(out, func(i, j int) bool { return out[i].HelpfulVote > out[j].HelpfulVote })
+	return out
 }
 
 type Worker struct {
-	river.WorkerDefaults[CatalogIngestionArgs]
-	pool          *pgxpool.Pool
-	queries       *dbgen.Queries
-	logger        *slog.Logger
-	categoryCache map[string]pgtype.UUID // key: parentID + "|" + slug, scoped to one job run
+	river.WorkerDefaults[ReviewsIngestionArgs]
+	db      *pgxpool.Pool
+	storage storage.Storage
+	logger  *slog.Logger
 }
 
-func NewWorker(pool *pgxpool.Pool, queries *dbgen.Queries, logger *slog.Logger) *Worker {
-	return &Worker{pool: pool, queries: queries, logger: logger, categoryCache: make(map[string]pgtype.UUID)}
+func NewWorker(db *pgxpool.Pool, st storage.Storage, logger *slog.Logger) *Worker {
+	return &Worker{db: db, storage: st, logger: logger}
 }
 
-const checkpointInterval = 1000
-
-// Timeout overrides River's default per-job timeout. catalog_ingestion
-// processes every matched record sequentially (upsert + category chain +
-// review enqueue = multiple round trips each), which will exceed the
-// client default well before --limit=50000 completes.
-func (w *Worker) Timeout(job *river.Job[CatalogIngestionArgs]) time.Duration {
+func (w *Worker) Timeout(job *river.Job[ReviewsIngestionArgs]) time.Duration {
 	return 60 * time.Minute
 }
 
-func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs]) error {
+func (w *Worker) Work(ctx context.Context, job *river.Job[ReviewsIngestionArgs]) error {
 	args := job.Args
 	if strings.TrimSpace(args.Category) == "" {
-		return fmt.Errorf("catalog_ingestion: category is required")
+		return fmt.Errorf("reviews_ingestion: category is required")
 	}
-	if args.Limit <= 0 {
-		args.Limit = 50000
+	if strings.TrimSpace(args.ReviewsSourcePath) == "" {
+		return fmt.Errorf("reviews_ingestion: reviews_source_path is required")
 	}
 
-	f, err := os.Open(args.SourcePath)
+	syncRunID, err := w.createSyncRun(ctx)
 	if err != nil {
-		return fmt.Errorf("open source file %s: %w", args.SourcePath, err)
+		return fmt.Errorf("create sync_run: %w", err)
+	}
+
+	knownProducts, err := w.loadKnownProducts(ctx, args.Category)
+	if err != nil {
+		return w.failRun(ctx, syncRunID, fmt.Errorf("load known products: %w", err))
+	}
+	w.logger.Info("reviews_ingestion started",
+		slog.String("category", args.Category),
+		slog.Int("known_products", len(knownProducts)))
+
+	aggs, linesScanned, err := w.streamAndAggregate(args.ReviewsSourcePath, knownProducts)
+	if err != nil {
+		return w.failRun(ctx, syncRunID, fmt.Errorf("stream reviews: %w", err))
+	}
+
+	processed := 0
+	for parentASIN, agg := range aggs {
+		if err := w.persistOne(ctx, agg); err != nil {
+			w.logger.Error("persist review agg failed",
+				slog.String("parent_asin", parentASIN), slog.Any("error", err))
+			continue // one bad product should not fail the whole run
+		}
+		processed++
+	}
+
+	w.logger.Info("reviews_ingestion completed",
+		slog.String("category", args.Category),
+		slog.Int("products_with_reviews", processed),
+		slog.Int("products_with_no_reviews", len(knownProducts)-len(aggs)))
+
+	return w.completeRun(ctx, syncRunID, linesScanned, processed)
+}
+
+func (w *Worker) loadKnownProducts(ctx context.Context, category string) (map[string]string, error) {
+	rows, err := w.db.Query(ctx, `
+		SELECT p.parent_asin, p.id::text
+		FROM products p
+		JOIN product_categories pc ON pc.product_id = p.id
+		JOIN categories c ON c.id = pc.category_id
+		WHERE c.slug = $1 OR c.name = $1
+	`, category)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make(map[string]string)
+	for rows.Next() {
+		var asin, id string
+		if err := rows.Scan(&asin, &id); err != nil {
+			return nil, err
+		}
+		out[asin] = id
+	}
+	return out, rows.Err()
+}
+
+func (w *Worker) streamAndAggregate(path string, known map[string]string) (map[string]*reviewAgg, int, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, 0, fmt.Errorf("open reviews file: %w", err)
 	}
 	defer f.Close()
 
 	gz, err := gzip.NewReader(f)
 	if err != nil {
-		return fmt.Errorf("open gzip reader: %w", err)
+		return nil, 0, fmt.Errorf("gzip reader: %w", err)
 	}
 	defer gz.Close()
 
-	syncRunID, err := w.queries.CreateSyncRun(ctx, "catalog_ingestion")
-	if err != nil {
-		return fmt.Errorf("create sync_run: %w", err)
-	}
-
 	scanner := bufio.NewScanner(gz)
-	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
+	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024) // review text can run long
 
-	var recordsIn, recordsOut int
-	riverClient := river.ClientFromContext[pgx.Tx](ctx)
-	batchDate := time.Now().UTC().Format("2006-01-02")
+	aggs := make(map[string]*reviewAgg, len(known))
+	lineNum := 0
 
 	for scanner.Scan() {
-		if recordsOut >= args.Limit {
-			break
-		}
-		recordsIn++
-
-		var rec metadataRecord
-		if err := json.Unmarshal(scanner.Bytes(), &rec); err != nil {
-			w.logger.Warn("skip malformed record", slog.Int("line", recordsIn), slog.Any("error", err))
+		lineNum++
+		var r rawReview
+		if err := json.Unmarshal(scanner.Bytes(), &r); err != nil {
+			w.logger.Warn("skipping malformed review line", slog.Int("line", lineNum))
 			continue
 		}
-
-		if !matchesCategory(rec.MainCategory, rec.Categories, args.Category) {
-			continue
+		productID, ok := known[r.ParentASIN]
+		if !ok {
+			continue // review belongs to a product outside this run
 		}
-		if rec.ParentAsin == "" || rec.Title == "" {
-			w.logger.Warn("skip invalid record — missing required field", slog.String("parent_asin", rec.ParentAsin))
-			continue
+		agg, ok := aggs[r.ParentASIN]
+		if !ok {
+			agg = newAgg(productID)
+			aggs[r.ParentASIN] = agg
 		}
-
-		title := sanitize(rec.Title)
-		description := sanitize(strings.Join(rec.Description, "\n\n"))
-		price := normalizePrice(rec.Price)
-
-		var imageURL *string
-		if len(rec.Images) > 0 && rec.Images[0].Large != "" {
-			imageURL = &rec.Images[0].Large
-		}
-
-		product, err := w.queries.UpsertProduct(ctx, dbgen.UpsertProductParams{
-			ParentAsin:  rec.ParentAsin,
-			Title:       title,
-			Brand:       nilIfEmpty(rec.Store),
-			Description: nilIfEmpty(description),
-			Price:       priceToNumeric(price),
-			Currency:    "USD",
-			ImageUrl:    imageURL,
-			ProductType: nilIfEmpty(rec.MainCategory),
-			Condition:   "New",
-		})
-		if err != nil {
-			w.logger.Error("upsert product failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
-			continue
-		}
-
-		leafCategoryID, err := w.resolveCategoryChain(ctx, rec.Categories, rec.MainCategory)
-		if err != nil {
-			w.logger.Error("resolve category chain failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
-		} else {
-			if err := w.queries.LinkProductCategory(ctx, dbgen.LinkProductCategoryParams{
-				ProductID:  product.ID,
-				CategoryID: leafCategoryID,
-			}); err != nil {
-				w.logger.Error("link category failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
-			}
-		}
-
-		recordsOut++
-
-		if recordsOut%checkpointInterval == 0 {
-			if err := w.queries.UpdateSyncRunProgress(ctx, dbgen.UpdateSyncRunProgressParams{
-				ID:         syncRunID,
-				RecordsIn:  int32(recordsIn),
-				RecordsOut: int32(recordsOut),
-			}); err != nil {
-				w.logger.Error("checkpoint failed", slog.Any("error", err))
-			}
-		}
-
-		// idempotency key: product_id + source_batch_date (execution_phase 2.3)
-		if _, err := riverClient.Insert(ctx, reviews.ReviewsIngestionArgs{
-			ProductID:       uuidString(product.ID),
-			SourceASIN:      product.ParentAsin,
-			SourceBatchDate: batchDate,
-		}, &river.InsertOpts{
-			UniqueOpts: river.UniqueOpts{ByArgs: true},
-		}); err != nil {
-			w.logger.Error("enqueue review_ingestion failed", slog.String("parent_asin", rec.ParentAsin), slog.Any("error", err))
-		}
+		agg.add(r)
 	}
-
 	if err := scanner.Err(); err != nil {
-		return w.failRun(ctx, syncRunID, fmt.Errorf("scan source file: %w", err))
+		return nil, lineNum, fmt.Errorf("scan reviews file: %w", err)
 	}
-
-	return w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
-		ID:         syncRunID,
-		Status:     "COMPLETED",
-		RecordsIn:  int32(recordsIn),
-		RecordsOut: int32(recordsOut),
-	})
+	return aggs, lineNum, nil
 }
 
-// resolveCategoryChain walks the Amazon category path (root -> leaf) and
-// creates/reuses each level with parent_id chained to the previous level.
-// Returns the leaf category's id; the product is linked only to the leaf.
-func (w *Worker) resolveCategoryChain(ctx context.Context, path []string, mainCategory string) (pgtype.UUID, error) {
-	if len(path) == 0 {
-		if mainCategory == "" {
-			return pgtype.UUID{}, fmt.Errorf("no category path and no main_category")
-		}
-		path = []string{mainCategory}
+func (w *Worker) persistOne(ctx context.Context, agg *reviewAgg) error {
+	top := agg.topSortedDesc()
+	blob, err := json.Marshal(top)
+	if err != nil {
+		return fmt.Errorf("marshal top20: %w", err)
+	}
+	storagePath := fmt.Sprintf("reviews/top20/%s.json", agg.productID)
+
+	uploadCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if err := w.storage.Upload(uploadCtx, storagePath, blob, "application/json"); err != nil {
+		return fmt.Errorf("upload top20: %w", err)
 	}
 
-	var parentID pgtype.UUID
-	var leafID pgtype.UUID
-
-	for _, name := range path {
-		name = strings.TrimSpace(name)
-		if name == "" {
-			continue
-		}
-		slug := slugify(name)
-		cacheKey := parentCacheKey(parentID) + "|" + slug
-
-		if cached, ok := w.categoryCache[cacheKey]; ok {
-			leafID = cached
-			parentID = cached
-			continue
-		}
-
-		id, err := w.queries.GetOrCreateCategory(ctx, dbgen.GetOrCreateCategoryParams{
-			Slug:     slug,
-			Name:     name,
-			ParentID: parentID,
-		})
-		if err != nil {
-			return pgtype.UUID{}, fmt.Errorf("get or create category %q: %w", name, err)
-		}
-		w.categoryCache[cacheKey] = id
-		leafID = id
-		parentID = id
+	avgRating := 0.0
+	if agg.count > 0 {
+		avgRating = agg.ratingSum / float64(agg.count)
 	}
 
-	if !leafID.Valid {
-		return pgtype.UUID{}, fmt.Errorf("category path resolved to nothing")
+	monthsSpan := 1.0
+	if agg.lastTS > agg.firstTS {
+		days := time.UnixMilli(agg.lastTS).Sub(time.UnixMilli(agg.firstTS)).Hours() / 24
+		if m := days / 30.44; m > 1 {
+			monthsSpan = m
+		}
 	}
-	return leafID, nil
+	velocity := float64(agg.count) / monthsSpan
+
+	avgHelpful := 0.0
+	if agg.count > 0 {
+		avgHelpful = float64(agg.helpfulSum) / float64(agg.count)
+	}
+	const helpfulCap = 50.0
+	helpfulnessScore := avgHelpful / helpfulCap
+	if helpfulnessScore > 1.0 {
+		helpfulnessScore = 1.0
+	}
+
+	distJSON, err := json.Marshal(agg.dist)
+	if err != nil {
+		return fmt.Errorf("marshal rating distribution: %w", err)
+	}
+
+	tx, err := w.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	if _, err := tx.Exec(ctx, `
+		INSERT INTO product_reviews_meta
+			(product_id, review_count, avg_rating, rating_distribution,
+			 review_velocity, helpfulness_ratio, raw_reviews_storage_path, computed_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+		ON CONFLICT (product_id) DO UPDATE SET
+			review_count             = EXCLUDED.review_count,
+			avg_rating               = EXCLUDED.avg_rating,
+			rating_distribution      = EXCLUDED.rating_distribution,
+			review_velocity          = EXCLUDED.review_velocity,
+			helpfulness_ratio        = EXCLUDED.helpfulness_ratio,
+			raw_reviews_storage_path = EXCLUDED.raw_reviews_storage_path,
+			computed_at              = NOW()
+	`, agg.productID, agg.count, avgRating, distJSON, velocity, helpfulnessScore, storagePath); err != nil {
+		return fmt.Errorf("upsert product_reviews_meta: %w", err)
+	}
+
+	if _, err := tx.Exec(ctx, `
+		UPDATE products SET avg_rating = $1, review_count = $2, updated_at = NOW()
+		WHERE id = $3
+	`, avgRating, agg.count, agg.productID); err != nil {
+		return fmt.Errorf("update product aggregates: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+
+	if client, ok := river.ClientFromContext[pgx.Tx](ctx); ok {
+		if _, err := client.Insert(ctx, features.FeatureGenerationArgs{
+			ProductID: agg.productID,
+		}, nil); err != nil {
+			w.logger.Warn("failed to enqueue feature_generation (non-fatal, expected until Phase 2.4)",
+				slog.String("product_id", agg.productID), slog.Any("error", err))
+		}
+	}
+
+	return nil
 }
 
-func (w *Worker) failRun(ctx context.Context, syncRunID pgtype.UUID, cause error) error {
-	if err := w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
-		ID:           syncRunID,
-		Status:       "FAILED",
-		ErrorMessage: strPtr(cause.Error()),
-	}); err != nil {
+func (w *Worker) createSyncRun(ctx context.Context) (string, error) {
+	var id string
+	err := w.db.QueryRow(ctx, `
+		INSERT INTO sync_runs (job_type, status) VALUES ('reviews_ingestion', 'RUNNING')
+		RETURNING id::text
+	`).Scan(&id)
+	return id, err
+}
+
+func (w *Worker) completeRun(ctx context.Context, syncRunID string, linesScanned, productsProcessed int) error {
+	_, err := w.db.Exec(ctx, `
+		UPDATE sync_runs
+		SET status = 'COMPLETED', records_in = $2, records_out = $3, completed_at = NOW()
+		WHERE id = $1::uuid
+	`, syncRunID, linesScanned, productsProcessed)
+	return err
+}
+
+func (w *Worker) failRun(ctx context.Context, syncRunID string, cause error) error {
+	if _, err := w.db.Exec(ctx, `
+		UPDATE sync_runs
+		SET status = 'FAILED', error_message = $2, completed_at = NOW()
+		WHERE id = $1::uuid
+	`, syncRunID, cause.Error()); err != nil {
 		w.logger.Error("failed to mark sync_run FAILED", slog.Any("error", err))
 	}
 	return cause
 }
-
-func matchesCategory(mainCat string, categories []string, target string) bool {
-	if strings.EqualFold(mainCat, target) {
-		return true
-	}
-	for _, c := range categories {
-		if strings.EqualFold(c, target) {
-			return true
-		}
-	}
-	return false
-}
-
-func sanitize(s string) string {
-	return strings.TrimSpace(html.UnescapeString(s))
-}
-
-func slugify(s string) string {
-	return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(s), " ", "-"))
-}
-
-func parentCacheKey(parentID pgtype.UUID) string {
-	if !parentID.Valid {
-		return "root"
-	}
-	return uuidString(parentID)
-}
-
-func nilIfEmpty(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-func strPtr(s string) *string { return &s }
-
-// uuidString converts pgtype.UUID (raw [16]byte) to canonical hex-dashed
-// string form. pgtype.UUID does not implement Stringer itself.
-func uuidString(id pgtype.UUID) string {
-	return uuid.UUID(id.Bytes).String()
-}
-
-func priceToNumeric(price *string) pgtype.Numeric {
-	if price == nil {
-		return pgtype.Numeric{}
-	}
-	var numeric pgtype.Numeric
-	if err := numeric.Scan(*price); err != nil {
-		return pgtype.Numeric{}
-	}
-	return numeric
-}
-
-// normalizePrice handles the three observed/possible JSON shapes for
-// price: null, a numeric literal, or a string (possibly with currency
-// symbols/commas). Anything else -> nil, product still ingested.
-func normalizePrice(raw any) *string {
-	switch v := raw.(type) {
-	case nil:
-		return nil
-	case float64:
-		if v < 0 {
-			return nil
-		}
-		formatted := strconv.FormatFloat(v, 'f', 2, 64)
-		return &formatted
-	case string:
-		cleaned := strings.TrimSpace(v)
-		cleaned = strings.TrimPrefix(cleaned, "$")
-		cleaned = strings.ReplaceAll(cleaned, ",", "")
-		if cleaned == "" {
-			return nil
-		}
-		val, err := strconv.ParseFloat(cleaned, 64)
-		if err != nil || val < 0 {
-			return nil
-		}
-		formatted := strconv.FormatFloat(val, 'f', 2, 64)
-		return &formatted
-	default:
-		return nil
-	}
-}
-----complete
