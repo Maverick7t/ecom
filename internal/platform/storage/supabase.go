@@ -1,5 +1,4 @@
 package storage
-package storage
 
 import (
 	"bytes"
@@ -12,8 +11,11 @@ import (
 	"github.com/Maverick7t/ecom/internal/platform/config"
 )
 
+// SupabaseStorage uploads via Supabase's Storage REST API directly
+// (no third-party SDK dependency). Used only when cfg.IsProd() — dev
+// uses LocalStorage instead, see local.go.
 type SupabaseStorage struct {
-	baseURL    string // e.g. https://<project>.supabase.co/storage/v1
+	baseURL    string // {SUPABASE_URL}/storage/v1
 	bucket     string
 	serviceKey string
 	httpClient *http.Client
@@ -28,6 +30,11 @@ func NewSupabaseStorage(cfg *config.Config) *SupabaseStorage {
 	}
 }
 
+// Upload writes data to {bucket}/{path}, overwriting if it already exists.
+//
+// VERIFY before relying on this in prod: the upsert semantics (x-upsert
+// header + POST) against Supabase's current Storage API docs. This has
+// not been tested against a live bucket in this session.
 func (s *SupabaseStorage) Upload(ctx context.Context, path string, data []byte, contentType string) error {
 	url := fmt.Sprintf("%s/object/%s/%s", s.baseURL, s.bucket, path)
 
@@ -36,9 +43,9 @@ func (s *SupabaseStorage) Upload(ctx context.Context, path string, data []byte, 
 		return fmt.Errorf("build storage request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+s.serviceKey)
+	req.Header.Set("apikey", s.serviceKey)
 	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("x-upsert", "true")
-	req.Header.Set("apikey", s.serviceKey)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
