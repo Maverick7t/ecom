@@ -15,11 +15,13 @@ import (
 
 	"github.com/Maverick7t/ecom/internal/api"
 	"github.com/Maverick7t/ecom/internal/jobs/catalog"
+	"github.com/Maverick7t/ecom/internal/jobs/reviews"
 	"github.com/Maverick7t/ecom/internal/platform/config"
 	"github.com/Maverick7t/ecom/internal/platform/database"
 	"github.com/Maverick7t/ecom/internal/platform/database/dbgen"
 	"github.com/Maverick7t/ecom/internal/platform/logger"
 	"github.com/Maverick7t/ecom/internal/platform/queue"
+	"github.com/Maverick7t/ecom/internal/platform/storage"
 	"github.com/Maverick7t/ecom/internal/platform/telemetry"
 )
 
@@ -49,12 +51,28 @@ func main() {
 	}
 	defer db.Close()
 
+	// ---- Review blob storage: local disk in dev, Supabase Storage in prod ----
+	var reviewStorage storage.Storage
+	if cfg.IsProd() {
+		reviewStorage = storage.NewSupabaseStorage(cfg)
+		log.Info("review storage backend: supabase", slog.String("bucket", cfg.SupabaseStorageBucket))
+	} else {
+		local, err := storage.NewLocalStorage(cfg.LocalStorageDir)
+		if err != nil {
+			log.Error("local storage init failed", slog.Any("error", err))
+			os.Exit(1)
+		}
+		reviewStorage = local
+		log.Info("review storage backend: local disk", slog.String("dir", cfg.LocalStorageDir))
+	}
+
 	// ---- River job queue ----
 	queries := dbgen.New(db)
 
 	workers := river.NewWorkers()
 	river.AddWorker(workers, catalog.NewWorker(db, queries, log))
-	// review, feature, embedding, summary workers registered here as each is built
+	river.AddWorker(workers, reviews.NewWorker(db, reviewStorage, log))
+	// features.Worker registered here once Phase 2.4 is built
 
 	riverClient, err := queue.NewClient(db, workers, log)
 	if err != nil {
