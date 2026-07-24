@@ -23,10 +23,11 @@ func main() {
 	source := flag.String("source", "", "path to metadata.jsonl.gz (required)")
 	category := flag.String("category", "", "single category to ingest, e.g. Electronics (required)")
 	limit := flag.Int("limit", 50000, "max products to ingest")
+	reviewsSource := flag.String("reviews-source", "", "path to review.jsonl.gz for this category (optional — omit to skip reviews_ingestion)")
 	flag.Parse()
 
 	if *source == "" || *category == "" {
-		slog.Error("usage: seed --source=path/to/metadata.jsonl.gz --category=Electronics --limit=50000")
+		slog.Error("usage: seed --source=path/to/metadata.jsonl.gz --category=Electronics --limit=50000 [--reviews-source=path/to/review.jsonl.gz]")
 		os.Exit(1)
 	}
 
@@ -53,16 +54,27 @@ func main() {
 
 	// Insert-only client: never call Start(). River still requires the
 	// job kind registered in Workers to validate Insert() calls.
+	//
+	// Note: only catalog.Worker needs registering here. The downstream
+	// reviews_ingestion job is inserted at runtime by catalog_ingestion
+	// itself via river.ClientFromContext, which resolves to the River
+	// client running inside cmd/api (the one with Start() called and
+	// reviews.Worker registered) — not this insert-only client.
 	riverClient, err := queue.NewClient(db, workers, log)
 	if err != nil {
 		log.Error("river client error", slog.Any("error", err))
 		os.Exit(1)
 	}
 
+	if *reviewsSource == "" {
+		log.Warn("no --reviews-source provided — reviews_ingestion will be skipped after catalog_ingestion completes")
+	}
+
 	job, err := riverClient.Insert(ctx, catalog.CatalogIngestionArgs{
-		SourcePath: *source,
-		Category:   *category,
-		Limit:      *limit,
+		SourcePath:        *source,
+		Category:          *category,
+		Limit:             *limit,
+		ReviewsSourcePath: *reviewsSource,
 	}, &river.InsertOpts{
 		UniqueOpts: river.UniqueOpts{ByArgs: true},
 	})
@@ -75,5 +87,6 @@ func main() {
 		slog.Int64("job_id", job.Job.ID),
 		slog.String("category", *category),
 		slog.Int("limit", *limit),
+		slog.Bool("reviews_ingestion_will_follow", *reviewsSource != ""),
 	)
 }
