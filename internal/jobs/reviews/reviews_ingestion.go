@@ -340,13 +340,12 @@ func (w *Worker) persistOne(ctx context.Context, agg *reviewAgg) error {
 	// catalog -> reviews handoff pattern. features.Worker is not built
 	// yet (Phase 2.4), so expect "job kind not registered" warnings
 	// here until it exists. That is expected, not a bug.
-	if client, ok := river.ClientFromContext[pgx.Tx](ctx); ok {
-		if _, err := client.Insert(ctx, features.FeatureGenerationArgs{
-			ProductID: agg.productID,
-		}, nil); err != nil {
-			w.logger.Warn("failed to enqueue feature_generation (non-fatal, expected until Phase 2.4)",
-				slog.String("product_id", agg.productID), slog.Any("error", err))
-		}
+	client := river.ClientFromContext[pgx.Tx](ctx)
+	if _, err := client.Insert(ctx, features.FeatureGenerationArgs{
+		ProductID: agg.productID,
+	}, nil); err != nil {
+		w.logger.Warn("failed to enqueue feature_generation (non-fatal, expected until Phase 2.4)",
+			slog.String("product_id", agg.productID), slog.Any("error", err))
 	}
 
 	return nil
