@@ -2,17 +2,24 @@ package reviews
 
 import "github.com/riverqueue/river"
 
-// ReviewsIngestionArgs — ONE job per category run, not one per product.
+// ReviewsIngestionArgs — ONE job per catalog_ingestion run, not one per
+// product and not scoped by category name.
 //
-// This replaces the earlier per-product design (ProductID/SourceASIN/
-// SourceBatchDate) that catalog_ingestion used to enqueue inside its
-// per-record loop. That design meant re-scanning the full reviews file
-// once per product — O(products x file size) — which does not finish
-// at 50k-product scale. This job streams the reviews file exactly once
-// and aggregates all known products from it in a single pass.
+// Earlier versions scoped this job by category name (`Category string`)
+// and matched it against categories.slug/name in the DB. That was a real
+// bug: catalog_ingestion filters metadata records against the DATASET's
+// category taxonomy (e.g. "Electronics", the top-level main_category),
+// but products get linked only to their LEAF category (e.g. "USB
+// Cables") via resolveCategoryChain. Those two strings never match, so
+// loadKnownProducts returned zero rows and every review was silently
+// skipped — the job "completed" with nothing aggregated.
+//
+// Fix: catalog_ingestion already knows exactly which parent_asins it
+// just upserted. Pass that list directly instead of trying to
+// reconstruct the set from a category name.
 type ReviewsIngestionArgs struct {
-	Category          string `json:"category"`
-	ReviewsSourcePath string `json:"reviews_source_path"`
+	ParentASINs       []string `json:"parent_asins"`
+	ReviewsSourcePath string   `json:"reviews_source_path"`
 }
 
 func (ReviewsIngestionArgs) Kind() string { return "reviews_ingestion" }

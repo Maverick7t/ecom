@@ -135,8 +135,8 @@ func (w *Worker) Timeout(job *river.Job[ReviewsIngestionArgs]) time.Duration {
 
 func (w *Worker) Work(ctx context.Context, job *river.Job[ReviewsIngestionArgs]) error {
 	args := job.Args
-	if strings.TrimSpace(args.Category) == "" {
-		return fmt.Errorf("reviews_ingestion: category is required")
+	if len(args.ParentASINs) == 0 {
+		return fmt.Errorf("reviews_ingestion: parent_asins is required and must be non-empty")
 	}
 	if strings.TrimSpace(args.ReviewsSourcePath) == "" {
 		return fmt.Errorf("reviews_ingestion: reviews_source_path is required")
@@ -147,12 +147,12 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[ReviewsIngestionArgs])
 		return fmt.Errorf("create sync_run: %w", err)
 	}
 
-	knownProducts, err := w.loadKnownProducts(ctx, args.Category)
+	knownProducts, err := w.loadKnownProducts(ctx, args.ParentASINs)
 	if err != nil {
 		return w.failRun(ctx, syncRunID, fmt.Errorf("load known products: %w", err))
 	}
 	w.logger.Info("reviews_ingestion started",
-		slog.String("category", args.Category),
+		slog.Int("requested_asins", len(args.ParentASINs)),
 		slog.Int("known_products", len(knownProducts)))
 
 	aggs, linesScanned, err := w.streamAndAggregate(args.ReviewsSourcePath, knownProducts)
@@ -171,24 +171,31 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[ReviewsIngestionArgs])
 	}
 
 	w.logger.Info("reviews_ingestion completed",
-		slog.String("category", args.Category),
 		slog.Int("products_with_reviews", processed),
 		slog.Int("products_with_no_reviews", len(knownProducts)-len(aggs)))
 
 	return w.completeRun(ctx, syncRunID, linesScanned, processed)
 }
 
-// loadKnownProducts restricts aggregation to products this ingestion run
-// actually created — reviews for parent_asins outside the current
-// category ingestion are skipped, not aggregated into nothing.
-func (w *Worker) loadKnownProducts(ctx context.Context, category string) (map[string]string, error) {
+// loadKnownProducts restricts aggregation to the exact parent_asins this
+// catalog_ingestion run upserted.
+//
+// This deliberately does NOT join through product_categories/categories.
+// catalog_ingestion filters metadata records against the dataset's raw
+// category taxonomy (main_category / categories[] array), but products
+// are linked only to their resolved LEAF category via
+// resolveCategoryChain. A category-name lookup here previously matched
+// zero rows because "Electronics" (dataset filter) never equals "USB
+// Cables" (leaf category a product actually got linked to) — see
+// args.go for the full writeup. Matching on parent_asin sidesteps the
+// mismatch entirely because it's the same identity catalog_ingestion
+// itself upserted against.
+func (w *Worker) loadKnownProducts(ctx context.Context, parentASINs []string) (map[string]string, error) {
 	rows, err := w.db.Query(ctx, `
-		SELECT p.parent_asin, p.id::text
-		FROM products p
-		JOIN product_categories pc ON pc.product_id = p.id
-		JOIN categories c ON c.id = pc.category_id
-		WHERE c.slug = $1 OR c.name = $1
-	`, category)
+		SELECT parent_asin, id::text
+		FROM products
+		WHERE parent_asin = ANY($1)
+	`, parentASINs)
 	if err != nil {
 		return nil, err
 	}
