@@ -103,6 +103,11 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	scanner.Buffer(make([]byte, 1024*1024), 10*1024*1024)
 
 	var recordsIn, recordsOut int
+	// ingestedASINs is the exact product scope reviews_ingestion should
+	// aggregate against — passed directly rather than re-derived from
+	// args.Category, which does not match the leaf categories products
+	// actually get linked to (see reviews/args.go for the full writeup).
+	ingestedASINs := make([]string, 0, args.Limit)
 
 	for scanner.Scan() {
 		if recordsOut >= args.Limit {
@@ -162,6 +167,7 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 		}
 
 		recordsOut++
+		ingestedASINs = append(ingestedASINs, product.ParentAsin)
 
 		if recordsOut%checkpointInterval == 0 {
 			if err := w.queries.UpdateSyncRunProgress(ctx, dbgen.UpdateSyncRunProgressParams{
@@ -179,19 +185,23 @@ func (w *Worker) Work(ctx context.Context, job *river.Job[CatalogIngestionArgs])
 	}
 
 	// Single end-of-run enqueue, not one per product (see design
-	// correction in internal/jobs/reviews/args.go). Skipped entirely,
-	// non-fatally, if no reviews source was provided — catalog_ingestion
-	// must still succeed on its own.
-	if strings.TrimSpace(args.ReviewsSourcePath) != "" {
+	// correction in internal/jobs/reviews/args.go). Passes the exact
+	// parent_asins this run upserted — NOT the category name, which
+	// does not match the leaf categories products get linked to and
+	// previously caused reviews_ingestion to silently aggregate zero
+	// products. Skipped entirely, non-fatally, if no reviews source was
+	// provided — catalog_ingestion must still succeed on its own.
+	if strings.TrimSpace(args.ReviewsSourcePath) != "" && len(ingestedASINs) > 0 {
 		riverClient := river.ClientFromContext[pgx.Tx](ctx)
 		if _, err := riverClient.Insert(ctx, reviews.ReviewsIngestionArgs{
-			Category:          args.Category,
+			ParentASINs:       ingestedASINs,
 			ReviewsSourcePath: args.ReviewsSourcePath,
 		}, nil); err != nil {
 			w.logger.Error("enqueue reviews_ingestion failed", slog.String("category", args.Category), slog.Any("error", err))
 		}
 	} else {
-		w.logger.Warn("no reviews_source_path provided — skipping reviews_ingestion enqueue", slog.String("category", args.Category))
+		w.logger.Warn("skipping reviews_ingestion enqueue — no reviews_source_path or no products ingested",
+			slog.String("category", args.Category), slog.Int("ingested_count", len(ingestedASINs)))
 	}
 
 	return w.queries.CompleteSyncRun(ctx, dbgen.CompleteSyncRunParams{
