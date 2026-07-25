@@ -13,11 +13,20 @@ import (
 type Querier interface {
 	CompleteSyncRun(ctx context.Context, arg CompleteSyncRunParams) error
 	CreateSyncRun(ctx context.Context, jobType string) (pgtype.UUID, error)
+	GetKnownProductsByCategory(ctx context.Context, slug string) ([]GetKnownProductsByCategoryRow, error)
 	GetOrCreateCategory(ctx context.Context, arg GetOrCreateCategoryParams) (pgtype.UUID, error)
 	GetProductByID(ctx context.Context, id pgtype.UUID) (Product, error)
 	LinkProductCategory(ctx context.Context, arg LinkProductCategoryParams) error
+	UpdateProductAggregatesFromReviews(ctx context.Context, arg UpdateProductAggregatesFromReviewsParams) error
 	UpdateSyncRunProgress(ctx context.Context, arg UpdateSyncRunProgressParams) error
 	UpsertProduct(ctx context.Context, arg UpsertProductParams) (UpsertProductRow, error)
+	// NOT currently used by reviews_ingestion.go — that worker uses raw
+	// pgx queries directly (see MIGRATION_GUIDE.md for why: avoiding
+	// hand-fabricated sqlc output that might drift from your actual
+	// sqlc v1.31.1 formatting). Run `sqlc generate` after adding this file
+	// if you want reviews.Worker rewired onto dbgen for consistency with
+	// catalog.Worker's pattern — that's a follow-up, not required to ship.
+	UpsertProductReviewsMeta(ctx context.Context, arg UpsertProductReviewsMetaParams) error
 }
 
 var _ Querier = (*Queries)(nil)

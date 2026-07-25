@@ -134,15 +134,15 @@ type ProductFeature struct {
 }
 
 type ProductReviewsMetum struct {
-	ID                 pgtype.UUID        `json:"id"`
-	ProductID          pgtype.UUID        `json:"product_id"`
-	ReviewCount        int32              `json:"review_count"`
-	AvgRating          pgtype.Numeric     `json:"avg_rating"`
-	RatingDistribution []byte             `json:"rating_distribution"`
-	ReviewVelocity     pgtype.Numeric     `json:"review_velocity"`
-	HelpfulnessRatio   pgtype.Numeric     `json:"helpfulness_ratio"`
-	RawReviewsR2Path   *string            `json:"raw_reviews_r2_path"`
-	ComputedAt         pgtype.Timestamptz `json:"computed_at"`
+	ID                    pgtype.UUID        `json:"id"`
+	ProductID             pgtype.UUID        `json:"product_id"`
+	ReviewCount           int32              `json:"review_count"`
+	AvgRating             pgtype.Numeric     `json:"avg_rating"`
+	RatingDistribution    []byte             `json:"rating_distribution"`
+	ReviewVelocity        pgtype.Numeric     `json:"review_velocity"`
+	HelpfulnessRatio      pgtype.Numeric     `json:"helpfulness_ratio"`
+	RawReviewsStoragePath *string            `json:"raw_reviews_storage_path"`
+	ComputedAt            pgtype.Timestamptz `json:"computed_at"`
 }
 
 type ProductSummary struct {
