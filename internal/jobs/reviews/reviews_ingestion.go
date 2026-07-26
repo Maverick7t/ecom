@@ -333,9 +333,10 @@ func (w *Worker) persistOne(ctx context.Context, agg *reviewAgg) error {
 	}
 
 	if _, err := tx.Exec(ctx, `
-		UPDATE products SET avg_rating = $1, review_count = $2, updated_at = NOW()
-		WHERE id = $3
-	`, avgRating, agg.count, agg.productID); err != nil {
+		UPDATE products
+		SET avg_rating = $1, review_count = $2, rating_distribution = $3, updated_at = NOW()
+		WHERE id = $4
+	`, avgRating, agg.count, distJSON, agg.productID); err != nil {
 		return fmt.Errorf("update product aggregates: %w", err)
 	}
 
